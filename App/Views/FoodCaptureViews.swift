@@ -945,11 +945,13 @@ struct LabelCaptureView: View {
     }
 }
 
-/// Values typed or read from a label, per 100 g or 100 ml.
+/// Values typed or read from a label: per 100 g (or 100 ml), or for a whole portion, such as a cooked dish.
 struct NutritionForm {
     var name = ""
     var brand = ""
     var unit = "g"
+    /// The values describe the whole portion instead of 100 g.
+    var perPortion = false
     var kcal = ""
     var protein = ""
     var fat = ""
@@ -963,6 +965,7 @@ struct NutritionForm {
     static func text(_ v: Double?) -> String { v.map { NutritionFormat.amount($0) } ?? "" }
 
     mutating func apply(_ r: NutritionLabelParser.Result) {
+        perPortion = false
         unit = r.unit
         kcal = Self.text(r.per100.kcal)
         protein = Self.text(r.per100.protein)
@@ -973,16 +976,72 @@ struct NutritionForm {
         salt = Self.text(r.per100.salt)
     }
 
+    var isBlank: Bool {
+        [name, kcal, protein, fat, carbs].allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    /// Energy from the macronutrients (4 kcal per g protein and carbohydrate, 9 per g fat) when the field is empty.
+    var derivedKcal: Double? {
+        guard Self.num(kcal) == nil else { return nil }
+        let p = Self.num(protein), f = Self.num(fat), c = Self.num(carbs)
+        guard p != nil || f != nil || c != nil else { return nil }
+        return 4 * (p ?? 0) + 9 * (f ?? 0) + 4 * (c ?? 0)
+    }
+
+    /// The values as typed: per 100 g, or for the whole portion.
+    var entered: Nutrients? {
+        guard let k = Self.num(kcal) ?? derivedKcal, k >= 0 else { return nil }
+        return Nutrients(kcal: k, protein: Self.num(protein) ?? 0, fat: Self.num(fat) ?? 0, carbs: Self.num(carbs) ?? 0,
+                         fiber: Self.num(fiber), sugar: Self.num(sugar), salt: Self.num(salt))
+    }
+
+    /// Weight of the portion: as typed, or estimated from the energy (cooked dishes have about 1.5 kcal per gram)
+    /// and never lighter than its nutrients. Only the table in the vault shows it; the day's totals come from the
+    /// values typed for the portion either way.
+    var portion: (grams: Double, estimated: Bool)? {
+        if let w = Self.num(serving), w > 0 { return (w, false) }
+        guard let n = entered else { return nil }
+        let mass = n.protein + n.fat + n.carbs + (n.fiber ?? 0)
+        let grams = max(n.kcal / 1.5, mass / 0.9, 50)
+        return ((grams / 10).rounded(.up) * 10, true)
+    }
+
+    /// Why "Weiter" is not possible yet, in words; nil when it is.
+    var problem: String? {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { return "Es fehlt noch ein Name." }
+        guard let n = entered else {
+            return "Es fehlen die Kalorien. Alternativ Eiweiß, Fett und Kohlenhydrate eintragen, dann rechnet die App die kcal aus."
+        }
+        if perPortion {
+            guard let p = portion else { return nil }
+            if !n.scaled(100 / p.grams).isPlausiblePer100 {
+                return "Für \(NutritionFormat.amount(p.grams)) \(unit) sind das zu viele Kalorien oder Nährstoffe. Bitte das Gewicht der Portion prüfen."
+            }
+            return nil
+        }
+        if !n.isPlausiblePer100 {
+            return "Pro 100 \(unit) sind höchstens 950 kcal und zusammen etwa 100 g Eiweiß, Fett und Kohlenhydrate möglich. Für ein ganzes Gericht oben „Ganze Portion“ wählen."
+        }
+        return nil
+    }
+
     func item(barcode: String?, source: FoodSource) -> FoodItem? {
-        let n = name.trimmingCharacters(in: .whitespaces)
-        guard !n.isEmpty, let k = Self.num(kcal) else { return nil }
-        let per100 = Nutrients(kcal: k, protein: Self.num(protein) ?? 0, fat: Self.num(fat) ?? 0, carbs: Self.num(carbs) ?? 0,
-                               fiber: Self.num(fiber), sugar: Self.num(sugar), salt: Self.num(salt))
-        guard per100.isPlausiblePer100 else { return nil }
+        guard problem == nil, let n = entered else { return nil }
+        let name = self.name.trimmingCharacters(in: .whitespaces)
         let b = brand.trimmingCharacters(in: .whitespaces)
-        return FoodItem(id: barcode.map { "off:\($0)" } ?? "custom:\(UUID().uuidString.lowercased())", name: n, brand: b.isEmpty ? nil : b,
-                        barcode: barcode, source: barcode == nil ? .custom : source, per100: per100, unit: unit,
+        let id = barcode.map { "off:\($0)" } ?? "custom:\(UUID().uuidString.lowercased())"
+        let src: FoodSource = barcode == nil ? .custom : source
+        if perPortion, let p = portion {
+            return FoodItem(id: id, name: name, brand: b.isEmpty ? nil : b, barcode: barcode, source: src, per100: n.scaled(100 / p.grams), unit: unit,
+                            servingGrams: p.grams, servingLabel: p.estimated ? "Gewicht geschätzt" : nil)
+        }
+        return FoodItem(id: id, name: name, brand: b.isEmpty ? nil : b, barcode: barcode, source: src, per100: n, unit: unit,
                         servingGrams: Self.num(serving).flatMap { $0 > 0 ? $0 : nil })
+    }
+
+    /// Amount proposed on the next screen.
+    var suggestedGrams: Double? {
+        perPortion ? portion?.grams : Self.num(serving).flatMap { $0 > 0 ? $0 : nil }
     }
 }
 
@@ -990,31 +1049,47 @@ struct NutritionFormSections: View {
     @Binding var form: NutritionForm
 
     var body: some View {
-        Section("Produkt") {
-            TextField("Name", text: $form.name)
-            TextField("Marke (optional)", text: $form.brand)
-            Picker("Bezugsgröße", selection: $form.unit) {
-                Text("pro 100 g").tag("g")
-                Text("pro 100 ml").tag("ml")
+        if form.perPortion {
+            Section("Gericht") {
+                TextField("Name", text: $form.name)
+                field("Gewicht (optional)", $form.serving, form.unit,
+                      placeholder: form.portion.map { $0.estimated ? "≈ \(NutritionFormat.amount($0.grams))" : "0" } ?? "0")
             }
-            .pickerStyle(.segmented)
-            field("Portion (optional)", $form.serving, form.unit)
+        } else {
+            Section("Produkt") {
+                TextField("Name", text: $form.name)
+                TextField("Marke (optional)", text: $form.brand)
+                Picker("Bezugsgröße", selection: $form.unit) {
+                    Text("pro 100 g").tag("g")
+                    Text("pro 100 ml").tag("ml")
+                }
+                .pickerStyle(.segmented)
+                field("Portion (optional)", $form.serving, form.unit)
+            }
         }
-        Section("Nährwerte pro 100 \(form.unit)") {
-            field("Energie", $form.kcal, "kcal")
+        Section {
+            field("Energie", $form.kcal, "kcal", placeholder: form.derivedKcal.map { "≈ \(NutritionFormat.kcal($0))" } ?? "0")
             field("Eiweiß", $form.protein, "g")
             field("Fett", $form.fat, "g")
             field("Kohlenhydrate", $form.carbs, "g")
             field("davon Zucker", $form.sugar, "g")
             field("Ballaststoffe", $form.fiber, "g")
             field("Salz", $form.salt, "g")
+        } header: {
+            Text(form.perPortion ? "Nährwerte der ganzen Portion" : "Nährwerte pro 100 \(form.unit)")
+        } footer: {
+            if !form.isBlank, let problem = form.problem {
+                Text(problem).foregroundStyle(.orange)
+            } else if form.perPortion {
+                Text("Ohne Gewicht schätzt die App es aus den Kalorien. Es steht nur in der Tabelle im Vault; die Summen des Tages stimmen so oder so.")
+            }
         }
     }
 
-    private func field(_ title: String, _ text: Binding<String>, _ unit: String) -> some View {
+    private func field(_ title: String, _ text: Binding<String>, _ unit: String, placeholder: String = "0") -> some View {
         LabeledContent(title) {
             HStack(spacing: 4) {
-                TextField("0", text: text)
+                TextField(placeholder, text: text)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .monospacedDigit()
@@ -1031,11 +1106,33 @@ struct ManualFoodView: View {
     var barcode: String?
     var pick: (FoodItem, Double?) -> Void
     var close: (() -> Void)?
-    @State private var form = NutritionForm()
+    @State private var form: NutritionForm
     @State private var keep = true
+
+    init(barcode: String?, pick: @escaping (FoodItem, Double?) -> Void, close: (() -> Void)?) {
+        self.barcode = barcode
+        self.pick = pick
+        self.close = close
+        var f = NutritionForm()
+        // A dish is known as a whole; a product with a barcode has its table per 100 g.
+        f.perPortion = barcode == nil
+        _form = State(initialValue: f)
+    }
 
     var body: some View {
         Form {
+            Section {
+                Picker("Angaben für", selection: $form.perPortion.animation(.smooth)) {
+                    Text("Ganze Portion").tag(true)
+                    Text("100 g").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: form.perPortion) { _, portion in
+                    if portion { form.unit = "g" }
+                }
+            } footer: {
+                Text(form.perPortion ? "Für Gerichte: die Werte der Portion, die du gegessen hast." : "Für Produkte: die Werte aus der Nährwerttabelle.")
+            }
             NutritionFormSections(form: $form)
             Section {
                 Toggle("Als eigenes Lebensmittel merken", isOn: $keep)
@@ -1051,9 +1148,9 @@ struct ManualFoodView: View {
                 Button("Weiter") {
                     guard let item = form.item(barcode: barcode, source: .manual) else { return }
                     if keep { store.saveFood(item) }
-                    pick(item, Double(form.serving.replacingOccurrences(of: ",", with: ".")))
+                    pick(item, form.suggestedGrams)
                 }
-                .disabled(form.item(barcode: barcode, source: .manual) == nil)
+                .disabled(form.problem != nil)
             }
         }
     }

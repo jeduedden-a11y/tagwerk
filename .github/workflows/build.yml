@@ -46,7 +46,7 @@ jobs:
     # Intel by default: Apple-Silicon runners (macos-26) were not being assigned for hours (Stand 02.11.2026).
     # Slower, but a push to main reliably ends in a release.
     runs-on: ${{ inputs.runner || 'macos-26-intel' }}
-    timeout-minutes: 85
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -106,6 +106,44 @@ jobs:
           zip -qry Tagwerk.ipa Payload
           ls -la Tagwerk.ipa
 
+      - name: Testergebnisse
+        if: steps.coretests.outcome == 'failure' || steps.e2e.outcome == 'failure'
+        run: |
+          echo "::error::Kern-Tests: ${{ steps.coretests.outcome }}, Ende-zu-Ende: ${{ steps.e2e.outcome }}"
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tagwerk-ipa
+          path: Tagwerk.ipa
+
+  # Runs alongside the build on its own runner: the release never waits for the simulators.
+  screenshots:
+    name: Screenshots
+    runs-on: ${{ inputs.runner || 'macos-26-intel' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 26 wählen
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XC" ]; then XC=/Applications/Xcode.app; fi
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Projekt erzeugen
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
       - name: Simulator-Build mit Demo-Daten
         run: |
           set -o pipefail
@@ -133,24 +171,6 @@ jobs:
           git add -A
           git commit -q -m "Screenshots ${GITHUB_SHA::7}"
           git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots
-
-      - name: Testergebnisse
-        if: steps.coretests.outcome == 'failure' || steps.e2e.outcome == 'failure'
-        run: |
-          echo "::error::Kern-Tests: ${{ steps.coretests.outcome }}, Ende-zu-Ende: ${{ steps.e2e.outcome }}"
-          exit 1
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log
-          path: build.log
-          if-no-files-found: ignore
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Tagwerk-ipa
-          path: Tagwerk.ipa
 
       - uses: actions/upload-artifact@v4
         if: always()
