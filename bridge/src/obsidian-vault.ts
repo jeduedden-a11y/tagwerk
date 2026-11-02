@@ -2,6 +2,9 @@ import { App, TFile, TFolder, normalizePath, parseYaml } from "obsidian";
 import type { Frontmatter, VaultFileStat, VaultPort } from "./vault";
 
 export class ObsidianVault implements VaultPort {
+  /** After one unsuccessful wait for Dataview, do not wait again for a while. */
+  private dataviewRetryAt = 0;
+
   constructor(private readonly app: App) {}
 
   private file(path: string): TFile {
@@ -69,11 +72,31 @@ export class ObsidianVault implements VaultPort {
     return new Uint8Array(await this.app.vault.readBinary(this.file(path)));
   }
 
-  /** Dataview's own renderer, if the plugin is installed and enabled. */
+  /** Dataview's own renderer, if the plugin is installed and enabled. Waits (up to 30 s) until Dataview has indexed the vault. */
   async renderDataview(query: string, path: string): Promise<string | null> {
     const plugins = (this.app as unknown as { plugins?: { plugins?: Record<string, { api?: unknown }> } }).plugins?.plugins;
-    const api = plugins?.dataview?.api as { queryMarkdown?: (q: string, origin?: string) => Promise<{ successful: boolean; value?: string }> } | undefined;
+    const api = plugins?.dataview?.api as
+      | { queryMarkdown?: (q: string, origin?: string) => Promise<{ successful: boolean; value?: string }>; index?: { initialized?: boolean } }
+      | undefined;
     if (!api?.queryMarkdown) return null;
+    if (api.index && api.index.initialized === false) {
+      if (Date.now() < this.dataviewRetryAt) return null;
+      const cache = this.app.metadataCache as unknown as { on(name: string, cb: () => void): unknown; offref(ref: unknown): void };
+      await new Promise<void>((resolve) => {
+        const ref = cache.on("dataview:index-ready", () => {
+          cache.offref(ref);
+          resolve();
+        });
+        window.setTimeout(() => {
+          cache.offref(ref);
+          resolve();
+        }, 30_000);
+      });
+      if (api.index.initialized === false) {
+        this.dataviewRetryAt = Date.now() + 10 * 60_000;
+        return null;
+      }
+    }
     const r = await api.queryMarkdown(query, path);
     return r?.successful && typeof r.value === "string" ? r.value : null;
   }
