@@ -1,0 +1,14 @@
+# Xcode
+*.xcodeproj
+build/
+build-sim/
+DerivedData/
+*.ipa
+Payload/
+shots/
+.build/
+.swiftpm/
+# Node
+bridge/node_modules/
+bridge/main.js
+.DS_Store

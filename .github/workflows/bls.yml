@@ -1,0 +1,42 @@
+name: BLS-Tabelle
+
+# Rebuilds App/Resources/BLS.json on demand and puts it on the branch data-bls for review.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openpyxl
+      - name: BLS laden und umwandeln
+        run: |
+          mkdir -p out
+          python3 scripts/bls_to_json.py out/BLS.json
+          python3 - <<'PY'
+          import json, random
+          d = json.load(open("out/BLS.json"))
+          f = d["foods"]
+          print(len(f), "Einträge")
+          random.seed(4)
+          for x in random.sample(f, 80): print(x[:4])
+          PY
+      - name: Auf den Datenzweig legen
+        run: |
+          cp out/BLS.json /tmp/BLS.json
+          git config user.name "Tagwerk"
+          git config user.email "tagwerk@users.noreply.github.com"
+          git checkout --orphan data-bls
+          git rm -rq --cached .
+          git clean -fdxq
+          cp /tmp/BLS.json BLS.json
+          git add BLS.json
+          git commit -q -m "BLS 4.0 Auszug (CC BY 4.0, Max Rubner-Institut)"
+          git push -f origin data-bls

@@ -1,0 +1,28 @@
+.tagwerk-status {
+  cursor: pointer;
+}
+
+.tagwerk-status-error {
+  color: var(--text-error);
+}
+
+.tagwerk-settings .tagwerk-habit .setting-item-control {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tagwerk-settings .tagwerk-num {
+  width: 5.5em;
+}
+
+.tagwerk-settings .tagwerk-errors {
+  padding: 8px 12px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-small);
+}
+
+.tagwerk-settings .tagwerk-errors ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}

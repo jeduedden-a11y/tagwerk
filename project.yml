@@ -1,0 +1,64 @@
+name: Tagwerk
+options:
+  bundleIdPrefix: io.github.jeduedden-a11y
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: de
+packages:
+  TagwerkCore:
+    path: Packages/TagwerkCore
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+targets:
+  Tagwerk:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: TagwerkCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Tagwerk
+        CFBundleDevelopmentRegion: de
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - arm64
+        ITSAppUsesNonExemptEncryption: false
+        NSCalendarsFullAccessUsageDescription: "Tagwerk trägt Termine, die du aus E-Mails übernimmst, in den Kalender deiner Wahl ein, zum Beispiel „SV“."
+        NSCameraUsageDescription: "Tagwerk liest Barcodes und Nährwerttabellen mit der Kamera und erkennt Mahlzeiten auf Fotos, alles auf dem iPhone."
+        NSLocationWhenInUseUsageDescription: "Tagwerk misst beim Aufzeichnen eines Laufs Strecke und Tempo per GPS, auch bei gesperrtem Bildschirm."
+        UIBackgroundModes:
+          - location
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.jeduedden-a11y.tagwerk
+        PRODUCT_NAME: Tagwerk
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: NO
+schemes:
+  Tagwerk:
+    build:
+      targets:
+        Tagwerk: all
+    run:
+      config: Debug
+    archive:
+      config: Release
