@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "macOS-Runner (macos-26 oder macos-26-intel, falls Apple-Silicon-Runner knapp sind)"
+        required: false
+        default: macos-26
 
 permissions:
   contents: write
@@ -38,7 +43,7 @@ jobs:
 
   ios:
     name: iPhone-App
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
