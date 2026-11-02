@@ -45,13 +45,25 @@ enum PlannerStyle {
         return "\(Planner.clock(s))–\(Planner.clock(end))"
     }
 
-    /// Visible hours: at least 7 to 17, widened to fit everything.
+    /// Visible hours: from the first start to the last end of whatever is shown, so a late lesson or evening
+    /// appointment is never cut off and an early or empty day wastes no space.
     static func hours(_ entries: [PlannerEntry]) -> ClosedRange<Int> {
-        let starts = entries.compactMap(\.start)
-        let ends = entries.compactMap { $0.end ?? $0.start }
-        let lo = min(7, (starts.min() ?? 7 * 60) / 60)
-        let hi = max(17, Int((Double(ends.max() ?? 17 * 60) / 60).rounded(.up)))
-        return max(0, lo)...min(24, max(hi, lo + 1))
+        guard let first = entries.compactMap(\.start).min() else { return 8...16 }
+        let last = entries.compactMap { $0.end ?? $0.start }.max() ?? first
+        let lo = max(0, first / 60)
+        let hi = min(24, max(Int((Double(last) / 60).rounded(.up)), lo + 2))
+        return lo...hi
+    }
+
+    /// Soft colour field behind the glass surfaces, so they have something to refract.
+    static var backdrop: some View {
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+            LinearGradient(colors: [Color.accentColor.opacity(0.22), Color(hex: "#AF52DE").opacity(0.10), .clear],
+                           startPoint: .topLeading, endPoint: .center)
+            RadialGradient(colors: [Color(hex: "#30B0C7").opacity(0.18), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 420)
+        }
+        .ignoresSafeArea()
     }
 
     static let dayFormat: DateFormatter = {
@@ -104,7 +116,7 @@ struct PlannerView: View {
                     PlannerDayView(day: store.plannerDay, showSettings: $showSettings, onSelect: { selected = $0 })
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background { PlannerStyle.backdrop }
             .navigationTitle("Planer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
@@ -192,32 +204,37 @@ struct PlannerHeader: View {
 
     var body: some View {
         let monday = Planner.monday(of: store.plannerDay)
-        VStack(spacing: 8) {
-            HStack {
-                Button { shift(-7) } label: { Image(systemName: "chevron.left").frame(width: 34, height: 34) }
-                    .accessibilityLabel("Vorige Woche")
-                Spacer()
-                VStack(spacing: 1) {
-                    Text(PlannerStyle.weekLabel(monday))
-                        .font(.subheadline.weight(.semibold))
-                    if store.untisInFlight {
-                        Text("Lade WebUntis …").font(.caption2).foregroundStyle(.secondary)
-                    } else if let err = store.state.untis.lastError {
-                        Text(err).font(.caption2).foregroundStyle(.orange).lineLimit(1)
+        VStack(spacing: 10) {
+            GlassEffectContainer(spacing: 10) {
+                HStack(spacing: 10) {
+                    Button { shift(-7) } label: { Image(systemName: "chevron.left").font(.subheadline.weight(.semibold)).frame(width: 30, height: 30) }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel("Vorige Woche")
+                    VStack(spacing: 1) {
+                        Text(PlannerStyle.weekLabel(monday))
+                            .font(.subheadline.weight(.semibold))
+                        if store.untisInFlight {
+                            Text("Lade WebUntis …").font(.caption2).foregroundStyle(.secondary)
+                        } else if let err = store.state.untis.lastError {
+                            Text(err).font(.caption2).foregroundStyle(.orange).lineLimit(1)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .glassEffect(.regular, in: .capsule)
+                    Button { shift(7) } label: { Image(systemName: "chevron.right").font(.subheadline.weight(.semibold)).frame(width: 30, height: 30) }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel("Nächste Woche")
                 }
-                Spacer()
-                Button { shift(7) } label: { Image(systemName: "chevron.right").frame(width: 34, height: 34) }
-                    .accessibilityLabel("Nächste Woche")
             }
-            .buttonStyle(.borderless)
             if !isWeek {
                 PlannerDayStrip(monday: monday)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.bar)
     }
 
     private func shift(_ days: Int) {
@@ -227,16 +244,16 @@ struct PlannerHeader: View {
 
 struct PlannerDayStrip: View {
     @Environment(Store.self) private var store
+    @Namespace private var glass
     let monday: String
 
     var body: some View {
-        let days = Planner.week(of: monday)
-        let weekendUsed = days.suffix(2).contains { !store.plannerEntries(on: $0).isEmpty } || Planner.weekday(store.plannerDay) > 5
-        let shown = weekendUsed ? days : Array(days.prefix(5))
-        HStack(spacing: 6) {
-            ForEach(shown, id: \.self) { d in
-                PlannerDayButton(day: d, selected: d == store.plannerDay, isToday: d == store.today, entries: store.plannerEntries(on: d)) {
-                    withAnimation(.smooth) { store.plannerDay = d }
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(Planner.week(of: monday), id: \.self) { d in
+                    PlannerDayButton(day: d, selected: d == store.plannerDay, isToday: d == store.today, entries: store.plannerEntries(on: d), glass: glass) {
+                        withAnimation(.bouncy(duration: 0.35)) { store.plannerDay = d }
+                    }
                 }
             }
         }
@@ -248,6 +265,7 @@ struct PlannerDayButton: View {
     let selected: Bool
     let isToday: Bool
     let entries: [PlannerEntry]
+    var glass: Namespace.ID
     let action: () -> Void
 
     var body: some View {
@@ -268,7 +286,9 @@ struct PlannerDayButton: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(selected ? Color.accentColor : Color.clear, in: .rect(cornerRadius: 12))
+            .contentShape(.rect)
+            .glassEffect(selected ? Glass.regular.tint(Color.accentColor.opacity(0.85)).interactive() : Glass.identity, in: .rect(cornerRadius: 14))
+            .glassEffectID(selected ? "selected" : day, in: glass)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(PlannerStyle.dayFormat.string(from: DayKey.date(day) ?? Date()))
@@ -361,7 +381,7 @@ struct PlannerAllDayChip: View {
         .padding(.horizontal, compact ? 6 : 10)
         .padding(.vertical, compact ? 4 : 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.14), in: .rect(cornerRadius: 10))
+        .glassEffect(.regular.tint(tint.opacity(0.22)), in: .rect(cornerRadius: 12))
         .contentShape(.rect)
     }
 }
@@ -404,13 +424,17 @@ struct PlannerTimeline: View {
                     PlannerHourLine(hour: h, showLabel: showLabels)
                         .offset(y: CGFloat(h - hours.lowerBound) * hourHeight)
                 }
-                ForEach(entries) { e in
-                    let c = cols[e.id] ?? (index: 0, count: 1)
-                    let frame = blockFrame(e, column: c, width: width)
-                    PlannerBlock(entry: e, compact: compact)
-                        .frame(width: frame.width, height: frame.height)
-                        .offset(x: labelWidth + frame.minX, y: frame.minY)
-                        .onTapGesture { onSelect(e) }
+                GlassEffectContainer(spacing: 4) {
+                    ZStack(alignment: .topLeading) {
+                        ForEach(entries) { e in
+                            let c = cols[e.id] ?? (index: 0, count: 1)
+                            let frame = blockFrame(e, column: c, width: width)
+                            PlannerBlock(entry: e, compact: compact)
+                                .frame(width: frame.width, height: frame.height)
+                                .offset(x: labelWidth + frame.minX, y: frame.minY)
+                                .onTapGesture { onSelect(e) }
+                        }
+                    }
                 }
                 if isToday, let now = nowMinutes(), now >= hours.lowerBound * 60, now <= hours.upperBound * 60 {
                     PlannerNowLine()
@@ -508,15 +532,17 @@ struct PlannerBlock: View {
         .padding(.horizontal, compact ? 4 : 8)
         .padding(.vertical, compact ? 3 : 5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(tint.opacity(off ? 0.07 : 0.17), in: .rect(cornerRadius: 8))
+        .glassEffect(off ? Glass.clear : Glass.regular.tint(tint.opacity(0.28)), in: .rect(cornerRadius: 10))
         .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 8)
+            Capsule()
                 .fill(tint.opacity(off ? 0.4 : 1))
                 .frame(width: 3)
+                .padding(.vertical, 5)
+                .padding(.leading, 2)
         }
         .overlay {
             if entry.kind == .suggestion || entry.mark == .changed {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: entry.kind == .suggestion ? [4, 3] : []))
                     .foregroundStyle(entry.kind == .suggestion ? tint : Color.orange)
             }
@@ -535,8 +561,7 @@ struct PlannerWeekView: View {
 
     var body: some View {
         let all = Planner.week(of: store.plannerDay)
-        let weekendUsed = all.suffix(2).contains { !store.plannerEntries(on: $0).isEmpty }
-        let days = weekendUsed ? all : Array(all.prefix(5))
+        let days = all
         let perDay = days.map { store.plannerEntries(on: $0) }
         let hours = PlannerStyle.hours(perDay.joined().filter { !$0.isAllDay })
         ScrollView {
