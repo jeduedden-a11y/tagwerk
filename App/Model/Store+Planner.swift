@@ -111,7 +111,7 @@ extension Store {
     var plannerAppointments: [PlannerAppointment] {
         state.appointments.map { a in
             PlannerAppointment(id: a.id, title: a.title, date: a.date, startTime: a.startTime, endTime: a.endTime, allDay: a.allDay,
-                               location: a.location, category: a.category, subject: a.subject, recur: a.recur, notes: a.notes,
+                               location: a.location, category: a.category, subject: a.schoolSubject, recur: a.recur, notes: a.notes,
                                pending: a.pending != nil)
         }
     }
@@ -187,7 +187,7 @@ extension Store {
         var a = Appointment(id: apptId, title: title, date: date, startTime: start, endTime: end, allDay: d.allDay,
                             location: location.isEmpty ? nil : location)
         a.category = d.kind.rawValue
-        a.subject = subject.isEmpty ? nil : subject
+        a.schoolSubject = subject.isEmpty ? nil : subject
         a.recur = recur
         a.notes = notes.isEmpty ? nil : notes
         a.pending = mark(e)

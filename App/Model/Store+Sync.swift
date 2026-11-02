@@ -196,7 +196,7 @@ extension Store {
             if state.deletedAppointments[a.id] != nil { continue }
             seen.insert(a.id)
             a.category = sa.category
-            a.subject = sa.subject
+            a.schoolSubject = sa.subject
             a.recur = sa.recur
             a.notes = sa.notes
             a.title = sa.title

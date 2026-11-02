@@ -382,7 +382,7 @@ final class FitnessProtocolTests: XCTestCase {
     func testDecodesFitnessPartOfPluginSnapshot() throws {
         let plain = try TagwerkCrypto.open(Data(Vectors.snapshotEnvelope.utf8), passphrase: Vectors.passphrase, kind: .snapshot)
         let snap = try JSONDecoder().decode(Snapshot.self, from: plain)
-        XCTAssertEqual(snap.features, ["runs", "food", "profile"])
+        XCTAssertEqual(snap.features, ["runs", "food", "profile", "planner", "wiki"])
         XCTAssertEqual(snap.runs.map(\.date), ["2026-10-28", "2026-11-01"])
         XCTAssertEqual(snap.runs[0].seconds, 1720)
         XCTAssertEqual(snap.runs[0].distanceKm, 5.1)

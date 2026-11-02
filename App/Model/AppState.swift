@@ -141,7 +141,8 @@ struct Appointment: Codable, Hashable, Identifiable {
     var pending: PendingMark?
     /// Planner (plugin 1.2): "klausur", "uni", "schule", "termin".
     var category: String?
-    var subject: String?
+    /// School subject of an exam (not the mail subject).
+    var schoolSubject: String?
     var recur: Recurrence?
     var notes: String?
 
@@ -178,7 +179,7 @@ struct Appointment: Codable, Hashable, Identifiable {
         calendarEventId = c.optional(.calendarEventId)
         pending = c.optional(.pending)
         category = c.optional(.category)
-        subject = c.optional(.subject)
+        schoolSubject = c.optional(.schoolSubject)
         recur = c.optional(.recur)
         notes = c.optional(.notes)
     }

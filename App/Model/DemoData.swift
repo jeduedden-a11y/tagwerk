@@ -190,7 +190,7 @@ extension DemoData {
         var exam = Appointment(id: "demo-kl", title: "Klausur", date: Planner.adding(9, to: monday), startTime: "09:40", endTime: "11:10", allDay: false,
                                location: "B204", path: "01 Leben/Termine/Klausur Mathematik.md")
         exam.category = "klausur"
-        exam.subject = "Mathematik"
+        exam.schoolSubject = "Mathematik"
         exam.notes = "Integralrechnung, Kurvenscharen"
         s.appointments += [lecture, tutorial, exam]
         let englishKey = "u:\(Planner.adding(2, to: monday)):11:30:E"
