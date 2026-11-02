@@ -124,9 +124,13 @@ jobs:
           name: Tagwerk-ipa
           path: Tagwerk.ipa
 
-  # Runs alongside the build on its own runner: the release never waits for the simulators.
+  # Runs alongside the build, one runner per device: the release never waits for the simulators.
   screenshots:
-    name: Screenshots
+    name: Screenshots (${{ matrix.device }})
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
     runs-on: ${{ inputs.runner || 'macos-26-intel' }}
     timeout-minutes: 60
     steps:
@@ -156,7 +160,7 @@ jobs:
       - name: Screenshots
         timeout-minutes: 32
         continue-on-error: true
-        run: scripts/screenshots.sh build-sim/Build/Products/Debug-iphonesimulator/Tagwerk.app shots 1680
+        run: scripts/screenshots.sh build-sim/Build/Products/Debug-iphonesimulator/Tagwerk.app shots 1680 ${{ matrix.device }}
 
       - name: Screenshots in Branch ablegen
         if: always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feature/'))
@@ -169,13 +173,13 @@ jobs:
           git config user.name "tagwerk-ci"
           git config user.email "tagwerk-ci@users.noreply.github.com"
           git add -A
-          git commit -q -m "Screenshots ${GITHUB_SHA::7}"
-          git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots
+          git commit -q -m "Screenshots ${GITHUB_SHA::7} (${{ matrix.device }})"
+          git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:ci-screenshots-${{ matrix.device }}
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: screenshots
+          name: screenshots-${{ matrix.device }}
           path: shots
           if-no-files-found: ignore
 

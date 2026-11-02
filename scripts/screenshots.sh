@@ -1,11 +1,13 @@
 #!/bin/bash
-# Boots simulators, installs the demo build and captures the main screens: iPhone in dark and light mode,
-# iPad in dark mode. Every simulator call has its own time limit and the whole run a budget (seconds,
-# third argument), so a slow or stuck simulator costs screenshots, never the build.
+# Boots a simulator, installs the demo build and captures the main screens: the iPhone in dark and light
+# mode, or (fourth argument "ipad") the iPad. Every simulator call has its own time limit and the whole run
+# a budget (seconds, third argument), so a slow or stuck simulator costs screenshots, never the build.
+# One device per runner: two simulators booting side by side on one Intel runner slowed both to a crawl.
 set -uo pipefail
 APP="$1"
 OUT="${2:-shots}"
 BUDGET="${3:-1500}"
+DEVICE="${4:-iphone}"
 START=$SECONDS
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
 LANG_ARGS=(-AppleLanguages "(de)" -AppleLocale de_DE)
@@ -76,32 +78,32 @@ iphone_set() {
   done
 }
 
+if [ "$DEVICE" = "ipad" ]; then
+  # The same app in regular width: sidebar, wide planner, note column.
+  IPAD="$(python3 scripts/pick-simulator.py ipad)" || exit 0
+  if ! boot "$IPAD"; then
+    echo "warning: iPad simulator did not boot"
+    exit 0
+  fi
+  for appearance in dark light; do
+    limit 30 xcrun simctl ui "$IPAD" appearance "$appearance" || true
+    shot "$IPAD" "ipad-$appearance-heute" -TWTab heute
+    shot "$IPAD" "ipad-$appearance-planer" -TWTab planer
+    shot "$IPAD" "ipad-$appearance-planer-woche" -TWTab planer -TWPlanner woche
+    shot "$IPAD" "ipad-$appearance-notizen" -TWTab notizen
+    shot "$IPAD" "ipad-$appearance-notiz" -TWTab notizen -TWNote "Mathematik/Analysis/Ableitung.md"
+    shot "$IPAD" "ipad-$appearance-verlauf" -TWTab verlauf
+  done
+  echo "screenshots done in $((SECONDS - START)) s"
+  exit 0
+fi
+
 UDID="$(python3 scripts/pick-simulator.py)"
-IPAD="$(python3 scripts/pick-simulator.py ipad || true)"
-# The iPad boots alongside the iPhone shots: on an Intel runner its boot alone takes over ten minutes.
-[ -n "$IPAD" ] && { limit 60 xcrun simctl boot "$IPAD" 2>/dev/null || true; }
 if ! boot "$UDID"; then
   echo "warning: iPhone simulator did not boot"
   exit 0
 fi
 iphone_set "$UDID" dark
-
-# iPad: the same app in regular width (sidebar, wide planner, note column). Before the light iPhone set,
-# which only repeats screens already checked in dark mode.
-if [ -n "$IPAD" ] && [ "$(left)" -gt 240 ]; then
-  if boot "$IPAD" $(($(left) - 200)); then
-    limit 30 xcrun simctl ui "$IPAD" appearance dark || true
-    shot "$IPAD" ipad-heute -TWTab heute
-    shot "$IPAD" ipad-planer -TWTab planer
-    shot "$IPAD" ipad-planer-woche -TWTab planer -TWPlanner woche
-    shot "$IPAD" ipad-notiz -TWTab notizen -TWNote "Mathematik/Analysis/Ableitung.md"
-    shot "$IPAD" ipad-verlauf -TWTab verlauf
-  else
-    echo "warning: iPad simulator did not boot"
-  fi
-  limit 120 xcrun simctl shutdown "$IPAD" >/dev/null 2>&1 || true
-fi
-
 iphone_set "$UDID" light
 
 # First launch without demo data: what a new installation shows.
