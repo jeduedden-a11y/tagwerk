@@ -178,7 +178,7 @@ struct SyncAccessory: View {
         if case .failed(let message) = store.syncPhase { return ("exclamationmark.triangle.fill", "Übertragung fehlgeschlagen", message) }
         let held = store.heldForPlugin
         if held > 0 && held == store.state.outbox.count {
-            return ("puzzlepiece.extension", "\(held) Einträge warten auf das Plugin", "In Obsidian Tagwerk Bridge 1.1 installieren")
+            return ("puzzlepiece.extension", "\(held) Einträge warten auf das Plugin", "In Obsidian Tagwerk Bridge 1.2 installieren")
         }
         if !store.state.outbox.isEmpty { return ("arrow.up.circle", "\(store.state.outbox.count) Änderungen warten", "Werden gesendet, sobald Netz da ist") }
         let waiting = store.awaitingVault

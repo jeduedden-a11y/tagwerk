@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "macOS-Runner (macos-26 oder macos-26-intel, falls Apple-Silicon-Runner knapp sind)"
+        description: "macOS-Runner (macos-26-intel oder macos-26 für Apple Silicon)"
         required: false
-        default: macos-26
+        default: macos-26-intel
 
 permissions:
   contents: write
@@ -43,7 +43,9 @@ jobs:
 
   ios:
     name: iPhone-App
-    runs-on: ${{ inputs.runner || 'macos-26' }}
+    # Intel by default: Apple-Silicon runners (macos-26) were not being assigned for hours (Stand 02.11.2026).
+    # Slower, but a push to main reliably ends in a release.
+    runs-on: ${{ inputs.runner || 'macos-26-intel' }}
     timeout-minutes: 85
     steps:
       - uses: actions/checkout@v4

@@ -21,9 +21,10 @@ limit() {
 left() { echo $((BUDGET - (SECONDS - START))); }
 
 boot() {
-  local udid="$1"
+  local udid="$1" wait="${2:-900}"
+  [ "$wait" -gt 30 ] || return 1
   limit 60 xcrun simctl boot "$udid" 2>/dev/null || true
-  limit 900 xcrun simctl bootstatus "$udid" -b >/dev/null || return 1
+  limit "$wait" xcrun simctl bootstatus "$udid" -b >/dev/null || return 1
   limit 30 xcrun simctl status_bar "$udid" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 >/dev/null 2>&1 || true
   limit 300 xcrun simctl install "$udid" "$APP" || return 1
   # Right after boot the simulator is busy with its own setup and the first launch is slow.
@@ -76,16 +77,19 @@ iphone_set() {
 }
 
 UDID="$(python3 scripts/pick-simulator.py)"
+IPAD="$(python3 scripts/pick-simulator.py ipad || true)"
+# The iPad boots alongside the iPhone shots: on an Intel runner its boot alone takes over ten minutes.
+[ -n "$IPAD" ] && { limit 60 xcrun simctl boot "$IPAD" 2>/dev/null || true; }
 if ! boot "$UDID"; then
   echo "warning: iPhone simulator did not boot"
   exit 0
 fi
 iphone_set "$UDID" dark
 
-# iPad: the same app in regular width (sidebar, wide planner, note column).
-IPAD="$(python3 scripts/pick-simulator.py ipad || true)"
-if [ -n "$IPAD" ] && [ "$(left)" -gt 420 ]; then
-  if boot "$IPAD"; then
+# iPad: the same app in regular width (sidebar, wide planner, note column). Before the light iPhone set,
+# which only repeats screens already checked in dark mode.
+if [ -n "$IPAD" ] && [ "$(left)" -gt 240 ]; then
+  if boot "$IPAD" $(($(left) - 200)); then
     limit 30 xcrun simctl ui "$IPAD" appearance dark || true
     shot "$IPAD" ipad-heute -TWTab heute
     shot "$IPAD" ipad-planer -TWTab planer
