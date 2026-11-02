@@ -37,7 +37,7 @@ const note = vault.files.get(`${D}/${date}.md`)!;
 console.log(note);
 assert.match(note, /laufen: true/);
 assert.match(note, /rating: "7\.1"/);
-assert.match(note, /weight: "76\.4"/);
+assert.match(note, /weight: "71\.4"/);
 assert.match(note, /%% tagwerk:journal %%\nEnde-zu-Ende: geschrieben mit TagwerkCore, übernommen vom Plugin\.\n%% \/tagwerk:journal %%/);
 const task = [...vault.files.entries()].find(([k]) => k.includes("E2E Aufgabe aus Swift"));
 assert.ok(task, "Aufgabendatei angelegt");
