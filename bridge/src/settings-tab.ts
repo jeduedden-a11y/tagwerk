@@ -72,7 +72,7 @@ export class TagwerkSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl).setName("Ordner im Vault").setHeading();
-    const folder = (name: string, key: "dailyFolder" | "tasksFolder" | "appointmentsFolder" | "runsFolder" | "routesFolder" | "foodFolder" | "profilePath", desc: string) =>
+    const folder = (name: string, key: "dailyFolder" | "tasksFolder" | "appointmentsFolder" | "runsFolder" | "routesFolder" | "foodFolder" | "profilePath" | "schoolNotePath" | "wikiFolder", desc: string) =>
       new Setting(containerEl).setName(name).setDesc(desc).addText((t) => t.setValue(s[key]).onChange(async (v) => {
         s[key] = v.trim().replace(/\/+$/, "");
         await p.saveSettings();
@@ -84,6 +84,17 @@ export class TagwerkSettingTab extends PluginSettingTab {
     folder("Laufrouten", "routesFolder", "GPX-Dateien der in der App aufgezeichneten Läufe");
     folder("Ernährung", "foodFolder", "Eine Notiz je Tag mit Mahlzeiten, Summen und Zielen");
     folder("Körperprofil", "profilePath", "Notiz mit Größe, Körperfett, Zielgewicht und den Prüfregeln");
+    folder("Stundenplan-Änderungen", "schoolNotePath", "Notiz mit Stunden, die du in der App selbst als Entfall oder Fehlzeit markierst");
+
+    new Setting(containerEl).setName("Notizen in der App").setHeading();
+    new Setting(containerEl)
+      .setName("Wiki an die App übertragen")
+      .setDesc("Legt den Ordner verschlüsselt im Daten-Repo ab, damit die App ihn offline anzeigt. Übertragen werden nur geänderte Teile, höchstens alle zehn Minuten.")
+      .addToggle((t) => t.setValue(s.wikiEnabled).onChange(async (v) => {
+        s.wikiEnabled = v;
+        await this.plugin.saveSettings();
+      }));
+    folder("Wiki-Ordner", "wikiFolder", "Ordner mit den Notizen für die App, mit allen Unterordnern, Abbildungen (SVG, PNG) und HTML-Dateien");
 
     new Setting(containerEl).setName("Gewohnheiten").setHeading();
     containerEl.createEl("p", {

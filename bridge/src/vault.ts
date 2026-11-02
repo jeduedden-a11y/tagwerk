@@ -4,6 +4,13 @@
  */
 export type Frontmatter = Record<string, unknown>;
 
+export interface VaultFileStat {
+  path: string;
+  /** Modification time in ms. */
+  mtime: number;
+  size: number;
+}
+
 export interface VaultPort {
   exists(path: string): Promise<boolean>;
   read(path: string): Promise<string>;
@@ -19,4 +26,7 @@ export interface VaultPort {
   parseYaml(yaml: string): unknown;
   /** Moves a file to the trash the user configured in Obsidian. */
   trash(path: string): Promise<void>;
+  /** Every file below folder, recursively and of any type. */
+  listFiles(folder: string): Promise<VaultFileStat[]>;
+  readBinary(path: string): Promise<Uint8Array>;
 }

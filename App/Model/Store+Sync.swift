@@ -3,12 +3,12 @@ import SwiftUI
 import TagwerkCore
 
 extension Store {
-    private var github: GitHubClient? {
+    var github: GitHubClient? {
         guard let token = keychain.get(SecretKey.githubToken), !token.isEmpty, state.settings.github.isComplete else { return nil }
         return GitHubClient(config: state.settings.github, token: token)
     }
 
-    private var passphrase: String? { keychain.get(SecretKey.passphrase) }
+    var passphrase: String? { keychain.get(SecretKey.passphrase) }
 
     func schedulePush(after seconds: Double = 2.5) {
         guard !isDemo else { return }
@@ -27,6 +27,11 @@ extension Store {
         pushTask?.cancel()
         await push()
         await pull()
+        // Timetable and notes load after the daily data, without holding up the sync status.
+        Task {
+            await refreshUntis()
+            await syncWiki()
+        }
     }
 
     func push() async {
@@ -183,11 +188,17 @@ extension Store {
 
         var appts: [Appointment] = []
         var seen = Set<String>()
+        for (id, m) in state.deletedAppointments where !pending(m) { state.deletedAppointments[id] = nil }
         for sa in snap.appointments {
             var a = state.appointments.first { ($0.id == sa.apptId) || ($0.path != nil && $0.path == sa.path) }
                 ?? Appointment(id: sa.apptId ?? "vault:\(sa.path)", title: sa.title, date: sa.date, startTime: sa.startTime,
                                endTime: sa.endTime, allDay: sa.allDay, location: sa.location, path: sa.path)
+            if state.deletedAppointments[a.id] != nil { continue }
             seen.insert(a.id)
+            a.category = sa.category
+            a.subject = sa.subject
+            a.recur = sa.recur
+            a.notes = sa.notes
             a.title = sa.title
             a.date = sa.date
             a.startTime = sa.startTime
@@ -204,6 +215,13 @@ extension Store {
         state.appointments = appts.sorted { ($0.date, $0.startTime ?? "") < ($1.date, $1.startTime ?? "") }
 
         mergeFitness(snap, isPending: pending)
+
+        var marks: [String: SchoolOverride] = [:]
+        for o in snap.schoolOverrides { marks[o.key] = o }
+        for (key, m) in state.overridePending {
+            if pending(m) { marks[key] = state.schoolOverrides[key] } else { state.overridePending[key] = nil }
+        }
+        state.schoolOverrides = marks
 
         state.bridgeErrors = snap.errors
         state.lastSnapshotAt = snap.generatedAt

@@ -139,6 +139,11 @@ struct Appointment: Codable, Hashable, Identifiable {
     var path: String?
     var calendarEventId: String?
     var pending: PendingMark?
+    /// Planner (plugin 1.2): "klausur", "uni", "schule", "termin".
+    var category: String?
+    var subject: String?
+    var recur: Recurrence?
+    var notes: String?
 
     init(id: String, title: String, date: String, startTime: String?, endTime: String?, allDay: Bool, location: String?,
          mailbox: String? = nil, from: String? = nil, subject: String? = nil, receivedAt: Date? = nil, path: String? = nil) {
@@ -172,6 +177,10 @@ struct Appointment: Codable, Hashable, Identifiable {
         path = c.optional(.path)
         calendarEventId = c.optional(.calendarEventId)
         pending = c.optional(.pending)
+        category = c.optional(.category)
+        subject = c.optional(.subject)
+        recur = c.optional(.recur)
+        notes = c.optional(.notes)
     }
 }
 
@@ -313,6 +322,7 @@ struct AppSettings: Codable, Hashable {
     var taskReminderMinutes = 8 * 60
     var deviceSalt = TagwerkCrypto.randomBytes(16).base64EncodedString()
     var dismissedReminderPrompt = false
+    var untis = UntisConfig()
 
     init() {}
 
@@ -334,6 +344,7 @@ struct AppSettings: Codable, Hashable {
         taskReminderMinutes = c.value(.taskReminderMinutes, d.taskReminderMinutes)
         deviceSalt = c.value(.deviceSalt, d.deviceSalt)
         dismissedReminderPrompt = c.value(.dismissedReminderPrompt, false)
+        untis = c.value(.untis, d.untis)
     }
 }
 
@@ -366,6 +377,11 @@ struct AppState: Codable {
     var profile: BodyProfile?
     var profilePending: PendingMark?
     var foodLibrary: [LibraryItem] = []
+    /// Planner: WebUntis cache, the user's own marks, deletions not yet acknowledged.
+    var untis = UntisCache()
+    var schoolOverrides: [String: SchoolOverride] = [:]
+    var overridePending: [String: PendingMark] = [:]
+    var deletedAppointments: [String: PendingMark] = [:]
 
     init() {}
 
@@ -396,5 +412,9 @@ struct AppState: Codable {
         profile = c.optional(.profile)
         profilePending = c.optional(.profilePending)
         foodLibrary = c.value(.foodLibrary, [])
+        untis = c.value(.untis, UntisCache())
+        schoolOverrides = c.value(.schoolOverrides, [:])
+        overridePending = c.value(.overridePending, [:])
+        deletedAppointments = c.value(.deletedAppointments, [:])
     }
 }

@@ -41,5 +41,6 @@ public enum SecretKey {
     public static let githubToken = "github-token"
     public static let passphrase = "passphrase"
     public static let claudeKey = "claude-api-key"
+    public static let untisPassword = "webuntis-password"
     public static func mailPassword(_ id: UUID) -> String { "mail-\(id.uuidString)" }
 }

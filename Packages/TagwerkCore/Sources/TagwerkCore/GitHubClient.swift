@@ -128,6 +128,14 @@ public struct GitHubClient: Sendable {
         return RemoteFile(sha: sha, data: bytes, etag: http.value(forHTTPHeaderField: "ETag"))
     }
 
+    /// File content as raw bytes (works beyond the 1 MB limit of the JSON form); nil if missing or not modified.
+    public func getRaw(path: String, etag: String? = nil) async throws -> RemoteFile? {
+        var req = request(url(path, query: [URLQueryItem(name: "ref", value: config.branch)]), method: "GET", etag: etag)
+        req.setValue("application/vnd.github.raw+json", forHTTPHeaderField: "Accept")
+        guard let (data, http) = try await send(req, ok: [200], allow404: true, allow304: true) else { return nil }
+        return RemoteFile(sha: http.value(forHTTPHeaderField: "ETag") ?? "", data: data, etag: http.value(forHTTPHeaderField: "ETag"))
+    }
+
     /// Verifies token and repo; refuses a public data repo.
     public func checkRepo() async throws {
         var c = URLComponents()

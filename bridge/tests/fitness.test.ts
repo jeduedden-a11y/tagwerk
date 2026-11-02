@@ -145,7 +145,7 @@ test("snapshot carries runs (vault and app), food days, profile and the feature 
   await applyEvent(ctx, { id: "s-0003-aaaa", ts: "3", type: "food.day", date: "2026-08-01", entries: [oats], targets, met: false });
   await applyEvent(ctx, { id: "s-0004-aaaa", ts: "4", type: "profile.set", profile });
   const snap = await buildSnapshot(ctx, { snapshotDays: 400, textDays: 60, pluginVersion: "1.1.0", applied: [], errors: [], lastIngestAt: null });
-  assert.deepEqual(snap.features, ["runs", "food", "profile"]);
+  assert.deepEqual(snap.features, ["runs", "food", "profile", "planner", "wiki"]);
   assert.deepEqual(snap.runs.map((r) => [r.date, r.distanceKm, r.seconds, r.runId, r.hasRoute]), [
     ["2026-10-20", 3, 947, null, false],
     ["2026-10-20", 8.51, 2690, "run-uuid-0100", true],

@@ -110,7 +110,20 @@ Ein zweiter Lauf am selben Tag heißt `JJJJ-MM-TT-2.md`. Das Diagramm im Vault e
 
 Lebensmitteltabelle: Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0 – Deutsche Nährstoffdatenbank. Karlsruhe. DOI [10.25826/Data20251217-134202-0](https://doi.org/10.25826/Data20251217-134202-0), Lizenz CC BY 4.0. `App/Resources/BLS.json` ist ein Auszug von zehn Komponenten, gerundet, Salz aus Natrium berechnet, mit den Errata vom August 2026; erzeugt von `scripts/bls_to_json.py` (Workflow `BLS-Tabelle`).
 
-Neue Ereignistypen (Läufe, Ernährung, Profil) schickt die App erst, wenn das Plugin im Stand meldet, dass es sie kennt (Tagwerk Bridge 1.1). Mit einem älteren Plugin bleiben sie auf dem iPhone und gehen nach dem Update automatisch raus.
+Neue Ereignistypen schickt die App erst, wenn das Plugin im Stand meldet, dass es sie kennt: Läufe, Ernährung und Profil ab Tagwerk Bridge 1.1, Planer-Einträge, Klausuren und eigene Markierungen ab 1.2. Mit einem älteren Plugin bleiben sie auf dem iPhone und gehen nach dem Update automatisch raus.
+
+## Planer
+
+- **Stundenplan live aus WebUntis**: Die App meldet sich mit Benutzername und Passwort an (JSON-RPC `authenticate`, Passwort im Schlüsselbund) und lädt die Woche über dieselbe REST-Schnittstelle wie die WebUntis-Webseite; fällt die aus, nimmt sie die dokumentierte JSON-RPC-Methode `getTimetable`. Entfall, Raum- und Lehrerwechsel, Klausuren und Veranstaltungen kommen so, wie die Schule sie einträgt. Geladen werden die gewählte Woche und die nächsten zwei; offline zeigt der Planer den letzten Stand.
+- **Eigene Markierungen**: Jede Stunde lässt sich für dich auf „Entfall“, „nicht da“ (mit Grund) oder, wenn sich ein Uni-Termin überschneidet, „ich gehe trotzdem hin“ setzen. Überschneidet sich ein Termin der Art `uni` mit Unterricht, zeigt der Planer die Stunde als „Uni“, solange du nichts anderes sagst.
+- **Eigene Einträge und Klausuren** landen als Notiz in `01 Leben/Termine`, wiederkehrende im Format von Full Calendar (`type: recurring`, `daysOfWeek`, `startRecur`, `endRecur`), mit `kategorie` (`termin`, `uni`, `klausur`) und bei Klausuren `fach`. Notizen, die du in Obsidian oder im Chat mit Claude dort anlegst, erscheinen ebenso im Planer.
+- **Vorschläge**: Daten aus Mails und aus WebUntis-Mitteilungen erscheinen gestrichelt; ein Tipp übernimmt sie in den Vault.
+
+**Stundenplan-Änderungen** `01 Leben/Schule/Stundenplan-Änderungen.md`: Tabelle der eigenen Markierungen, die Daten stehen als Kommentar darunter. Das Plugin schreibt die Notiz bei jeder Änderung neu.
+
+## Notizen
+
+Das Plugin legt den Wiki-Ordner (Standard `02 Wiki`) verschlüsselt unter `wiki/` im Daten-Repo ab: 32 Teile nach einem Hash des Pfads, dazu vier Teile für Notizen mit Dataview-Abfragen, die das Plugin mit Dataview selbst zu Markdown ausrechnet. Nach einer Änderung wird nur der betroffene Teil neu hochgeladen, höchstens alle zehn Minuten. Die App lädt nur Teile, deren Hash sich geändert hat, und hält alles als Dateien auf dem Gerät. Dargestellt wird mit markdown-it und KaTeX (gebündelt, offline): Formeln, Callouts (auch einklappbare), Tabellen, Fußnoten, Aufgabenlisten, Wikilinks mit Abschnitten und eingebettete SVG-, PNG- und HTML-Dateien. DataviewJS, Charts und SMILES gibt es nur in Obsidian; die App zeigt an der Stelle einen Hinweis. Quelle des Renderers: `tools/notes-renderer` (`npm run build` schreibt nach `App/Resources/Notes`).
 
 ## KI-Bewertung
 
@@ -124,6 +137,8 @@ An Claude gehen: Tagebuchtext, abgehakte Gewohnheiten mit Wochenstand, Gewicht, 
 - Mit kostenloser Apple-ID: Neu-Signieren alle 7 Tage.
 - Schul-Mail per IMAP funktioniert mit IONOS und ähnlichen Anbietern, nicht mit Microsoft 365.
 - Kein Widget.
+- WebUntis-Anmeldung nur mit Benutzername und Passwort; Schulen mit reiner Microsoft- oder IServ-Anmeldung gehen so nicht. Die Schnittstelle der Webseite ist nicht offiziell dokumentiert und kann sich ändern.
+- Notizen sind in der App nur lesbar.
 - Kein Import aus Apple Health: dafür braucht die App eine Berechtigung, die mit kostenloser Signierung über Sideloadly nicht verlässlich mitkommt.
 - Die Bilderkennung schätzt keine Portionsgrößen; ohne großes Sprachmodell geht das auf dem iPhone 14 nicht verlässlich.
 

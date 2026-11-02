@@ -1,7 +1,8 @@
 import { journalHash, normalizeJournal } from "./crypto";
 import { findFoodBlock, profileFromFrontmatter, runDateFromStem, runDistance, runOrdinal, runSeconds } from "./fitness";
 import { bodyOutsideJournal, findJournalBlock, splitFrontmatter, taskNotes } from "./markdown";
-import type { BodyProfile, Snapshot, SnapshotAppointment, SnapshotDay, SnapshotFoodDay, SnapshotRun, SnapshotTask, BridgeError, RatingSource } from "./protocol";
+import { parseSchoolNote, recurrenceOf } from "./planner";
+import type { BodyProfile, SchoolOverride, Snapshot, SnapshotAppointment, SnapshotDay, SnapshotFoodDay, SnapshotRun, SnapshotTask, BridgeError, RatingSource } from "./protocol";
 import { FEATURES, isDate, isTime, SCHEMA } from "./protocol";
 import type { ApplyContext } from "./apply";
 import { localDate } from "./apply";
@@ -123,9 +124,11 @@ export async function buildSnapshot(ctx: ApplyContext, opts: SnapshotOptions): P
   const apptCutoff = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
   const appointments: SnapshotAppointment[] = [];
   for (const path of await ctx.vault.list(ctx.folders.appointmentsFolder)) {
-    const { fm } = await parse(ctx, path);
-    const date = dateStr(fm.date);
-    if (!date || date < apptCutoff) continue;
+    const { fm, body } = await parse(ctx, path);
+    const rec = recurrenceOf(fm);
+    const date = rec?.start ?? dateStr(fm.date);
+    if (!date) continue;
+    if (rec ? rec.recur.until < apptCutoff : date < apptCutoff) continue;
     const st = str(fm.startTime);
     const et = str(fm.endTime);
     appointments.push({
@@ -137,6 +140,10 @@ export async function buildSnapshot(ctx: ApplyContext, opts: SnapshotOptions): P
       endTime: et && isTime(et) ? et : null,
       allDay: fm.allDay === undefined ? !st : bool(fm.allDay),
       location: str(fm.ort) ?? str(fm.location),
+      category: str(fm.kategorie)?.toLowerCase() ?? null,
+      subject: str(fm.fach),
+      recur: rec?.recur ?? null,
+      notes: appointmentNotes(body),
     });
   }
   appointments.sort((a, b) => (a.date + (a.startTime ?? "")).localeCompare(b.date + (b.startTime ?? "")));
@@ -173,6 +180,13 @@ export async function buildSnapshot(ctx: ApplyContext, opts: SnapshotOptions): P
     profile = profileFromFrontmatter((await parse(ctx, ctx.folders.profilePath)).fm);
   }
 
+  let schoolOverrides: SchoolOverride[] = [];
+  const schoolPath = ctx.folders.schoolNotePath;
+  if (schoolPath && (await ctx.vault.exists(schoolPath))) {
+    const from = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 28));
+    schoolOverrides = parseSchoolNote(await ctx.vault.read(schoolPath)).filter((o) => o.date >= from);
+  }
+
   return {
     schema: SCHEMA,
     generatedAt: now.toISOString(),
@@ -188,5 +202,21 @@ export async function buildSnapshot(ctx: ApplyContext, opts: SnapshotOptions): P
     runs: runs.slice(-3000),
     foodDays,
     profile,
+    schoolOverrides,
   };
+}
+
+/** The notes block the app writes, otherwise the text below the heading without callouts and comments; at most 600 characters. */
+function appointmentNotes(body: string): string | null {
+  const m = /%% tagwerk:notizen %%\n([\s\S]*?)\n%% \/tagwerk:notizen %%/.exec(body);
+  const text = (m
+    ? m[1]
+    : body
+        .replace(/%%[\s\S]*?%%/g, "")
+        .split("\n")
+        .filter((l) => !/^#\s/.test(l) && !/^>/.test(l))
+        .join("\n")
+  ).trim();
+  if (!text) return null;
+  return text.length > 600 ? `${text.slice(0, 599).trimEnd()}…` : text;
 }

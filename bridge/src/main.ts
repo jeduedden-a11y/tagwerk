@@ -18,6 +18,10 @@ export interface TagwerkSettings {
   routesFolder: string;
   foodFolder: string;
   profilePath: string;
+  schoolNotePath: string;
+  /** Folder the app shows under "Notizen"; empty switches the copy off. */
+  wikiFolder: string;
+  wikiEnabled: boolean;
   intervalMinutes: number;
   snapshotDays: number;
   textDays: number;
@@ -36,6 +40,8 @@ export const DEFAULT_SETTINGS: TagwerkSettings = {
   tasksFolder: "01 Leben/Tasks",
   appointmentsFolder: "01 Leben/Termine",
   ...DEFAULT_FITNESS_FOLDERS,
+  wikiFolder: "02 Wiki",
+  wikiEnabled: true,
   intervalMinutes: 5,
   snapshotDays: 400,
   textDays: 60,
@@ -105,6 +111,7 @@ export default class TagwerkBridgePlugin extends Plugin {
       routesFolder: this.settings.routesFolder,
       foodFolder: this.settings.foodFolder,
       profilePath: this.settings.profilePath,
+      schoolNotePath: this.settings.schoolNotePath,
       habits: this.settings.habits,
     };
   }
@@ -118,6 +125,7 @@ export default class TagwerkBridgePlugin extends Plugin {
       passphrase: this.getPassphrase(),
       snapshotDays: this.settings.snapshotDays,
       textDays: this.settings.textDays,
+      wikiFolder: this.settings.wikiEnabled ? this.settings.wikiFolder.trim() : "",
     };
   }
 
@@ -139,6 +147,7 @@ export default class TagwerkBridgePlugin extends Plugin {
       state: this.settings.state,
       saveState: () => this.saveSettings(),
       version: this.manifest.version,
+      renderDataview: (q, p) => vault.renderDataview(q, p),
     });
 
     this.statusEl = this.addStatusBarItem();

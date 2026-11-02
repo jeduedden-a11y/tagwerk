@@ -75,7 +75,7 @@ extension Store {
         return n
     }
 
-    private func extract(mailbox: String, subject: String, from: String, received: Date, text: String, sourceID: String) async -> Int {
+    func extract(mailbox: String, subject: String, from: String, received: Date, text: String, sourceID: String) async -> Int {
         let full = subject + "\n" + text
         let candidates = DateExtractor.candidates(in: full, reference: received)
         guard !candidates.isEmpty else { return 0 }

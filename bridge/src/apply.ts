@@ -21,14 +21,17 @@ import {
   JOURNAL_END,
   JOURNAL_START,
 } from "./markdown";
+import { fcDays, parseSchoolNote, recurrenceOf, renderSchoolNote, upsertOverride } from "./planner";
 import type {
   AppointmentAddEvent,
+  AppointmentPatchEvent,
   BridgeEvent,
   DayJournalEvent,
   DayPatchEvent,
   FoodDayEvent,
   HabitConfig,
   ProfileSetEvent,
+  SchoolOverrideEvent,
   RunAddEvent,
   RunPatchEvent,
   TaskCreateEvent,
@@ -49,14 +52,19 @@ export interface FolderSettings {
   foodFolder: string;
   /** Note with the body data. */
   profilePath: string;
+  /** Note with the lessons the user marked himself (cancelled, absent). */
+  schoolNotePath: string;
   habits: HabitConfig[];
 }
+
 
 export const DEFAULT_FITNESS_FOLDERS = {
   runsFolder: "01 Leben/Fittness/Laufen/Laufzeiten",
   routesFolder: "01 Leben/Fittness/Laufen/Routen",
   foodFolder: "01 Leben/Fittness/Ernährung",
   profilePath: "01 Leben/Fittness/Körperprofil.md",
+  // Planner (plugin 1.2): the lessons the user marked himself
+  schoolNotePath: "01 Leben/Schule/Stundenplan-Änderungen.md",
 };
 
 export interface ApplyContext {
@@ -235,21 +243,29 @@ async function applyTaskPatch(ctx: ApplyContext, ev: TaskPatchEvent): Promise<vo
   }
 }
 
+const CATEGORY_LABEL: Record<string, string> = { klausur: "Klausur", uni: "Uni", schule: "Schule", termin: "Termin" };
+
 async function applyAppointment(ctx: ApplyContext, ev: AppointmentAddEvent): Promise<void> {
   if (await findById(ctx, ctx.folders.appointmentsFolder, ev.apptId)) return;
   const title = ev.title.replace(/\s+/g, " ").trim();
   const path = await freePath(ctx, ctx.folders.appointmentsFolder, sanitizeFileName(`${ev.date} ${title}`, ev.date));
   const allDay = ev.allDay || !ev.startTime;
   const src = ev.source ?? {};
+  const quelle = src.mailbox ? (src.mailbox === "WebUntis" ? "WebUntis" : "E-Mail") : "Tagwerk";
+  const when = ev.recur
+    ? ["type: recurring", `daysOfWeek: ${fcDays(ev.recur.days)}`, `startRecur: ${ev.date}`, `endRecur: ${ev.recur.until}`]
+    : [`date: ${ev.date}`];
   const fm = [
     `title: ${yamlScalar(title)}`,
-    `date: ${ev.date}`,
+    ...when,
     ...(!allDay && ev.startTime ? [`startTime: "${ev.startTime}"`] : []),
     ...(!allDay && ev.endTime ? [`endTime: "${ev.endTime}"`] : []),
     `allDay: ${allDay ? "true" : "false"}`,
-    "type: single",
+    ...(ev.recur ? [] : ["type: single"]),
+    ...(ev.category ? [`kategorie: ${ev.category}`] : []),
+    ...(ev.subject?.trim() ? [`fach: ${yamlScalar(ev.subject.trim())}`] : []),
     ...(ev.location?.trim() ? [`ort: ${yamlScalar(ev.location.trim())}`] : []),
-    "quelle: E-Mail",
+    `quelle: ${quelle}`,
     ...(src.mailbox ? [`postfach: ${yamlScalar(src.mailbox)}`] : []),
     ...(src.from ? [`von: ${yamlScalar(src.from)}`] : []),
     ...(src.subject ? [`betreff: ${yamlScalar(clip(src.subject, 200))}`] : []),
@@ -257,6 +273,7 @@ async function applyAppointment(ctx: ApplyContext, ev: AppointmentAddEvent): Pro
     `tagwerk_id: ${ev.apptId}`,
     "tags:",
     "  - /termine",
+    ...(ev.category === "klausur" ? ["  - /klausur"] : []),
   ];
   const info: string[] = [];
   if (src.from) info.push(`> **Von:** ${src.from}`);
@@ -265,9 +282,123 @@ async function applyAppointment(ctx: ApplyContext, ev: AppointmentAddEvent): Pro
     const d = new Date(src.receivedAt);
     if (!isNaN(d.getTime())) info.push(`> **Empfangen:** ${deDateTime(d)}`);
   }
-  const callout = info.length ? `\n> [!info] Aus einer E-Mail übernommen\n${info.join("\n")}\n` : "";
+  const origin = quelle === "WebUntis" ? "Aus einer WebUntis-Mitteilung übernommen" : "Aus einer E-Mail übernommen";
+  const callout = info.length ? `\n> [!info] ${origin}\n${info.join("\n")}\n` : "";
   const notes = ev.notes?.replace(/\r\n?/g, "\n").trim();
-  await ctx.vault.create(path, `---\n${fm.join("\n")}\n---\n\n# ${title}\n${callout}${notes ? `\n${notes}\n` : ""}`);
+  const heading = ev.category === "klausur" && ev.subject?.trim() && !title.toLowerCase().includes(ev.subject.trim().toLowerCase())
+    ? `${title} (${ev.subject.trim()})`
+    : title;
+  const block = notes ? `\n%% tagwerk:notizen %%\n${notes}\n%% /tagwerk:notizen %%\n` : "";
+  await ctx.vault.create(path, `---\n${fm.join("\n")}\n---\n\n# ${heading}\n${callout}${block}`);
+}
+
+async function findAppointment(ctx: ApplyContext, apptId?: string | null, path?: string | null): Promise<string | null> {
+  if (apptId) {
+    const p = await findById(ctx, ctx.folders.appointmentsFolder, apptId);
+    if (p) return p;
+  }
+  if (path && (await ctx.vault.exists(path))) return path;
+  return null;
+}
+
+async function applyAppointmentPatch(ctx: ApplyContext, ev: AppointmentPatchEvent): Promise<void> {
+  const path = await findAppointment(ctx, ev.apptId, ev.path);
+  if (!path) {
+    if (ev.deleted) return; // already gone
+    throw new Error(`Termin nicht gefunden (${ev.apptId ?? ev.path}). Wurde er in Obsidian gelöscht oder umbenannt?`);
+  }
+  if (ev.deleted) {
+    await ctx.vault.trash(path);
+    return;
+  }
+  let oldTitle: string | null = null;
+  const newTitle = ev.title?.replace(/\s+/g, " ").trim();
+  await ctx.vault.processFrontMatter(path, (fm) => {
+    oldTitle = fmString(fm.title);
+    if (newTitle) fm.title = newTitle;
+    const rec = recurrenceOf(fm);
+    if (ev.recur) {
+      const start = ev.date ?? rec?.start ?? fmString(fm.date) ?? localDate(ctx.now());
+      fm.type = "recurring";
+      fm.daysOfWeek = [...new Set(ev.recur.days)].sort((a, b) => a - b).map((d) => "MTWRFSU"[d - 1]);
+      fm.startRecur = start;
+      fm.endRecur = ev.recur.until;
+      delete fm.date;
+    } else if (ev.recur === null && rec) {
+      fm.type = "single";
+      fm.date = ev.date ?? rec.start;
+      delete fm.daysOfWeek;
+      delete fm.startRecur;
+      delete fm.endRecur;
+    } else if (ev.date) {
+      if (rec) fm.startRecur = ev.date;
+      else fm.date = ev.date;
+    }
+    if (ev.allDay !== undefined) fm.allDay = ev.allDay;
+    if (ev.startTime !== undefined) setOrClear(fm, "startTime", ev.startTime);
+    if (ev.endTime !== undefined) setOrClear(fm, "endTime", ev.endTime);
+    if (ev.allDay === true) {
+      delete fm.startTime;
+      delete fm.endTime;
+    }
+    if (ev.location !== undefined) {
+      delete fm.location;
+      setOrClear(fm, "ort", ev.location?.trim() || null);
+    }
+    if (ev.category !== undefined) setOrClear(fm, "kategorie", ev.category);
+    if (ev.subject !== undefined) setOrClear(fm, "fach", ev.subject?.trim() || null);
+  });
+  if (newTitle && oldTitle && oldTitle !== newTitle) {
+    const from = oldTitle;
+    await ctx.vault.process(path, (content) => {
+      const s = splitFrontmatter(content);
+      const prefix = content.slice(0, content.length - s.body.length);
+      return prefix + retitleHeading(s.body, from, newTitle);
+    });
+  }
+  if (ev.notes !== undefined) {
+    const notes = ev.notes?.replace(/\r\n?/g, "\n").trim() ?? "";
+    await ctx.vault.process(path, (content) => {
+      const s = splitFrontmatter(content);
+      const prefix = content.slice(0, content.length - s.body.length);
+      const lines = s.body.replace(/^\n+/, "").split("\n");
+      const head = lines[0]?.startsWith("# ") ? lines[0] : null;
+      let rest = (head ? lines.slice(1) : lines).join("\n");
+      const marker = "%% tagwerk:notizen %%";
+      const endMarker = "%% /tagwerk:notizen %%";
+      const block = notes ? `${marker}\n${notes}\n${endMarker}` : "";
+      const a = rest.indexOf(marker);
+      const b = rest.indexOf(endMarker);
+      if (a >= 0 && b > a) rest = rest.slice(0, a) + block + rest.slice(b + endMarker.length);
+      else if (block) rest = `${rest.trimEnd()}\n\n${block}\n`;
+      return `${prefix}\n${head ? `${head}\n` : ""}${rest.startsWith("\n") ? rest : `\n${rest}`}`;
+    });
+  }
+}
+
+async function applySchoolOverride(ctx: ApplyContext, ev: SchoolOverrideEvent): Promise<void> {
+  const path = ctx.folders.schoolNotePath;
+  if (!path) throw new Error("Kein Pfad für die Notiz mit den Stundenplan-Änderungen eingestellt.");
+  const exists = await ctx.vault.exists(path);
+  const entries = exists ? parseSchoolNote(await ctx.vault.read(path)) : [];
+  const next = upsertOverride(
+    entries,
+    {
+      key: ev.key,
+      date: ev.date,
+      start: ev.start,
+      end: ev.end ?? null,
+      subject: ev.subject?.trim() || null,
+      title: ev.title?.trim() || null,
+      state: ev.state,
+      reason: ev.reason?.trim() || null,
+      updated: ctx.now().toISOString(),
+    },
+    localDate(ctx.now()),
+  );
+  const content = renderSchoolNote(next);
+  if (exists) await ctx.vault.process(path, () => content);
+  else await ctx.vault.create(path, content);
 }
 
 async function applyRunAdd(ctx: ApplyContext, ev: RunAddEvent): Promise<void> {
@@ -369,6 +500,10 @@ export async function applyEvent(ctx: ApplyContext, ev: BridgeEvent): Promise<vo
       return applyTaskPatch(ctx, ev);
     case "appointment.add":
       return applyAppointment(ctx, ev);
+    case "appointment.patch":
+      return applyAppointmentPatch(ctx, ev);
+    case "school.override":
+      return applySchoolOverride(ctx, ev);
     case "run.add":
       return applyRunAdd(ctx, ev);
     case "run.patch":

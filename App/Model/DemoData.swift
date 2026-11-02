@@ -98,8 +98,9 @@ enum DemoData {
         s.foodLibrary = [oats, skyr, banana, chicken, rice, peanut].enumerated().map { i, item in
             LibraryItem(item: item, uses: 6 - i, lastUsed: now.addingTimeInterval(Double(-i) * 3600), lastGrams: food.entries[i].grams)
         }
-        s.bridgeFeatures = ["runs", "food", "profile"]
-        s.pluginVersion = "1.1.0"
+        s.bridgeFeatures = ["runs", "food", "profile", "planner", "wiki"]
+        s.pluginVersion = "1.2.0"
+        planner(&s, today: today)
 
         s.settings.github = GitHubConfig(owner: "demo", repo: "tagwerk-daten")
         s.settings.userName = "Alex"
@@ -123,3 +124,117 @@ private struct SplitMix64: RandomNumberGenerator {
         return z ^ (z >> 31)
     }
 }
+
+// MARK: - Planner and notes (synthetic)
+
+extension DemoData {
+    /// Two weeks of an invented timetable, a weekly lecture, an exam, own marks and messages.
+    static func planner(_ s: inout AppState, today: String) {
+        let monday = Planner.monday(of: today)
+        // (weekday, start, end, short, long, teacher, room)
+        let plan: [(Int, String, String, String, String, String, String)] = [
+            (1, "07:50", "09:20", "E", "Englisch", "Mül", "A101"), (1, "09:40", "11:10", "M", "Mathematik", "Sch", "B204"),
+            (1, "11:30", "13:00", "G", "Geschichte", "Ber", "A112"), (1, "13:45", "15:15", "ETH", "Ethik", "Kra", "C003"),
+            (2, "07:50", "09:20", "PH", "Physik", "Lan", "N201"), (2, "09:40", "11:10", "D", "Deutsch", "Wei", "A105"),
+            (2, "11:30", "13:00", "M", "Mathematik", "Sch", "B204"),
+            (3, "07:50", "09:20", "CH", "Chemie", "Ott", "N104"), (3, "09:40", "11:10", "G", "Geschichte", "Ber", "A112"),
+            (3, "11:30", "13:00", "E", "Englisch", "Mül", "A101"), (3, "13:45", "15:15", "SP", "Sport", "Hof", "Halle 2"),
+            (4, "07:50", "09:20", "M", "Mathematik", "Sch", "B204"), (4, "09:40", "11:10", "PH", "Physik", "Lan", "N201"),
+            (4, "13:45", "15:15", "CH", "Chemie", "Ott", "N104"),
+            (5, "07:50", "09:20", "D", "Deutsch", "Wei", "A105"), (5, "09:40", "11:10", "G", "Geschichte", "Ber", "A112"),
+        ]
+        for week in 0..<2 {
+            let base = Planner.adding(7 * week, to: monday)
+            var list: [UntisPeriod] = []
+            for p in plan {
+                let day = Planner.adding(p.0 - 1, to: base)
+                var period = UntisPeriod(date: day, start: p.1, end: p.2, subject: p.3, subjectLong: p.4, teacher: p.5, room: p.6)
+                if week == 0 && p.0 == 2 && p.3 == "PH" {
+                    period.status = .cancelled
+                    period.info = "Entfall wegen Exkursion"
+                }
+                if week == 0 && p.0 == 5 && p.3 == "G" {
+                    period.roomOld = "A112"
+                    period.room = "A008"
+                    period.status = .changed
+                }
+                if week == 0 && p.0 == 4 && p.3 == "CH" {
+                    period.kind = .exam
+                    period.info = "Klausur: Elektrochemie"
+                }
+                list.append(period)
+            }
+            s.untis.setWeek(base, list, today: today)
+        }
+        s.untis.school = UntisSchoolData(holidays: [UntisHoliday(name: "Weihnachtsferien", start: "2026-12-21", end: "2027-01-09")],
+                                         units: [UntisTimeUnit(number: 1, start: "07:50", end: "08:35"), UntisTimeUnit(number: 2, start: "08:35", end: "09:20"),
+                                                 UntisTimeUnit(number: 3, start: "09:40", end: "10:25"), UntisTimeUnit(number: 4, start: "10:25", end: "11:10"),
+                                                 UntisTimeUnit(number: 5, start: "11:30", end: "12:15"), UntisTimeUnit(number: 6, start: "12:15", end: "13:00"),
+                                                 UntisTimeUnit(number: 7, start: "13:45", end: "14:30"), UntisTimeUnit(number: 8, start: "14:30", end: "15:15")],
+                                         userName: "Alex")
+        s.untis.lastFetch = Date().addingTimeInterval(-300)
+        s.untis.messages = [
+            UntisMessage(id: 3, subject: "Exkursion Physik", preview: "Am Dienstag entfällt Physik, wir treffen uns um 8 Uhr am Bahnhof.", sender: "Lan",
+                         sent: UntisDates.formatter.string(from: Date().addingTimeInterval(-7200)), read: false, attachments: false),
+            UntisMessage(id: 2, subject: "Projektwoche", preview: "Die Anmeldung für die Projektwoche läuft bis Freitag.", sender: "Sekretariat",
+                         sent: UntisDates.formatter.string(from: Date().addingTimeInterval(-86_400 * 2)), read: true, attachments: true),
+        ]
+        var lecture = Appointment(id: "demo-uni", title: "Analysis I", date: monday, startTime: "10:15", endTime: "11:45", allDay: false, location: "Hörsaal 1",
+                                  path: "01 Leben/Termine/Analysis I.md")
+        lecture.category = "uni"
+        lecture.recur = Recurrence(days: [1, 3], until: Planner.adding(100, to: monday))
+        var tutorial = Appointment(id: "demo-tut", title: "Übung Analysis", date: Planner.adding(3, to: monday), startTime: "16:00", endTime: "17:30",
+                                   allDay: false, location: "Seminarraum 3", path: "01 Leben/Termine/Übung Analysis.md")
+        tutorial.category = "uni"
+        tutorial.recur = Recurrence(days: [4], until: Planner.adding(100, to: monday))
+        var exam = Appointment(id: "demo-kl", title: "Klausur", date: Planner.adding(9, to: monday), startTime: "09:40", endTime: "11:10", allDay: false,
+                               location: "B204", path: "01 Leben/Termine/Klausur Mathematik.md")
+        exam.category = "klausur"
+        exam.subject = "Mathematik"
+        exam.notes = "Integralrechnung, Kurvenscharen"
+        s.appointments += [lecture, tutorial, exam]
+        let englishKey = "u:\(Planner.adding(2, to: monday)):11:30:E"
+        s.schoolOverrides[englishKey] = SchoolOverride(key: englishKey, date: Planner.adding(2, to: monday), start: "11:30", end: "13:00", subject: "Englisch",
+                                                       title: "Englisch", state: "abwesend", reason: "Arzt")
+    }
+
+    /// A few invented notes for screenshots of the notes tab.
+    static let wiki: [String: String] = [
+        "Mathematik/Analysis/Ableitung.md": """
+        ---
+        tags:
+          - mathematik
+          - analysis
+        ---
+        # Ableitung
+
+        > [!important] Definition
+        > Die Ableitung von $f$ an der Stelle $x_0$ ist der Grenzwert des Differenzenquotienten:
+        > $$f'(x_0) = \\lim_{h \\to 0} \\frac{f(x_0+h)-f(x_0)}{h}$$
+
+        Geometrisch ist $f'(x_0)$ die Steigung der [[Tangente]] im Punkt $(x_0, f(x_0))$.
+
+        > [!tip] Merksatz
+        > Erst ableiten, dann einsetzen. Für Potenzen gilt $\\left(x^n\\right)' = n\\,x^{n-1}$.
+
+        ## Regeln
+
+        | Regel | Formel |
+        | --- | --- |
+        | Produktregel | $(uv)' = u'v + uv'$ |
+        | Kettenregel | $(u \\circ v)' = (u' \\circ v)\\cdot v'$ |
+
+        > [!question]- Typische Fehlerquelle
+        > Bei der Kettenregel die innere Ableitung vergessen.
+
+        Siehe auch [[Integral|Integralrechnung]].
+        """,
+        "Mathematik/Analysis/Integral.md": "# Integral\n\nDas bestimmte Integral misst die orientierte Fläche: $\\int_a^b f(x)\\,dx = F(b) - F(a)$.\n",
+        "Mathematik/Analysis/Tangente.md": "# Tangente\n\nGerade durch $(x_0, f(x_0))$ mit Steigung $f'(x_0)$.\n",
+        "Physik/Quantenphysik/Photoeffekt.md": "# Photoeffekt\n\n> [!info] Einsteins Gleichung\n> $E_{kin} = h f - W_A$\n",
+        "Chemie/Elektrochemie/Redoxreaktionen.md": "# Redoxreaktionen\n\nOxidation ist Elektronenabgabe, Reduktion ist Elektronenaufnahme.\n",
+        "Geschichte/Weimarer Republik.md": "# Weimarer Republik\n\n> [!example] Quelle\n> Verfassung vom 11. August 1919.\n",
+        "TMUA/Logik und Beweise.md": "# Logik und Beweise\n\n- [x] Kontraposition\n- [ ] Widerspruchsbeweis\n",
+    ]
+}
+

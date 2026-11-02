@@ -111,15 +111,59 @@ public struct SnapshotTask: Codable, Hashable, Sendable {
     public var notes: String?
 }
 
+/// Weekly on the given ISO weekdays (1 = Monday ... 7 = Sunday) until the given day.
+public struct Recurrence: Codable, Hashable, Sendable {
+    public var days: [Int]
+    public var until: String
+
+    public init(days: [Int], until: String) {
+        self.days = days
+        self.until = until
+    }
+}
+
 public struct SnapshotAppointment: Codable, Hashable, Sendable {
     public var path: String
     public var apptId: String?
     public var title: String
+    /// First occurrence for recurring notes.
     public var date: String
     public var startTime: String?
     public var endTime: String?
     public var allDay: Bool
     public var location: String?
+    /// "klausur", "uni", "schule", "termin" (plugin 1.2), nil before.
+    public var category: String?
+    public var subject: String?
+    public var recur: Recurrence?
+    public var notes: String?
+}
+
+/// A lesson the user marked himself: "entfall", "abwesend" or "anwesend".
+public struct SchoolOverride: Codable, Hashable, Sendable, Identifiable {
+    public var key: String
+    public var date: String
+    public var start: String
+    public var end: String?
+    public var subject: String?
+    public var title: String?
+    public var state: String
+    public var reason: String?
+    public var updated: String?
+
+    public var id: String { key }
+
+    public init(key: String, date: String, start: String, end: String?, subject: String?, title: String?, state: String, reason: String?, updated: String? = nil) {
+        self.key = key
+        self.date = date
+        self.start = start
+        self.end = end
+        self.subject = subject
+        self.title = title
+        self.state = state
+        self.reason = reason
+        self.updated = updated
+    }
 }
 
 public struct BridgeError: Codable, Hashable, Sendable {
@@ -192,6 +236,7 @@ public struct Snapshot: Codable, Sendable {
     public var runs: [RunRecord]
     public var foodDays: [SnapshotFoodDay]
     public var profile: BodyProfile?
+    public var schoolOverrides: [SchoolOverride]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -209,6 +254,7 @@ public struct Snapshot: Codable, Sendable {
         runs = (try? c.decode([RunRecord].self, forKey: .runs)) ?? []
         foodDays = (try? c.decode([SnapshotFoodDay].self, forKey: .foodDays)) ?? []
         profile = (try? c.decodeIfPresent(BodyProfile.self, forKey: .profile)) ?? nil
+        schoolOverrides = (try? c.decode([SchoolOverride].self, forKey: .schoolOverrides)) ?? []
     }
 }
 
@@ -232,18 +278,27 @@ public struct OutgoingEvent: Codable, Hashable, Sendable, Identifiable {
         self.json = json
     }
 
-    public var type: String? {
-        ((try? JSONSerialization.jsonObject(with: json)) as? [String: Any])?["type"] as? String
+    private var object: [String: Any] {
+        ((try? JSONSerialization.jsonObject(with: json)) as? [String: Any]) ?? [:]
     }
 
-    /// Feature the plugin must announce before this event may be sent; nil for the base protocol.
-    public var requiredFeature: String? { Self.feature(for: type ?? "") }
+    public var type: String? { object["type"] as? String }
 
-    public static func feature(for type: String) -> String? {
+    /// Feature the plugin must announce before this event may be sent; nil for the base protocol.
+    public var requiredFeature: String? {
+        let o = object
+        return Self.feature(for: o["type"] as? String ?? "", fields: o)
+    }
+
+    public static func feature(for type: String, fields: [String: Any] = [:]) -> String? {
         switch type {
         case "run.add", "run.patch": return "runs"
         case "food.day": return "food"
         case "profile.set": return "profile"
+        case "appointment.patch", "school.override": return "planner"
+        case "appointment.add":
+            // An older plugin would write a weekly lecture as a single e-mail appointment.
+            return fields["recur"] != nil || fields["category"] != nil || fields["subject"] != nil ? "planner" : nil
         default: return nil
         }
     }
@@ -323,8 +378,12 @@ public enum EventFactory {
 
     public static func appointmentAdd(apptId: String, title: String, date: String, startTime: String?, endTime: String?, allDay: Bool,
                                       location: String?, notes: String?, mailbox: String?, from: String?, subject: String?, receivedAt: Date?,
+                                      category: String? = nil, schoolSubject: String? = nil, recur: Recurrence? = nil,
                                       now: Date = Date(), id: String = UUID().uuidString.lowercased()) -> OutgoingEvent {
         var f: [String: Any] = ["apptId": apptId, "title": title, "date": date, "allDay": allDay]
+        if let category { f["category"] = category }
+        if let schoolSubject, !schoolSubject.isEmpty { f["subject"] = schoolSubject }
+        if let recur { f["recur"] = ["days": recur.days, "until": recur.until] }
         f["startTime"] = startTime.map { $0 as Any } ?? NSNull()
         f["endTime"] = endTime.map { $0 as Any } ?? NSNull()
         if let location, !location.isEmpty { f["location"] = location }
@@ -336,6 +395,45 @@ public enum EventFactory {
         if let receivedAt { src["receivedAt"] = iso(receivedAt) }
         if !src.isEmpty { f["source"] = src }
         return make("appointment.add", f, now: now, id: id)
+    }
+
+    /// Changes or deletes an appointment note (found by tagwerk_id, else by path).
+    public static func appointmentPatch(apptId: String?, path: String?, deleted: Bool = false, title: String? = nil, date: String? = nil,
+                                        startTime: FieldUpdate<String> = .unchanged, endTime: FieldUpdate<String> = .unchanged,
+                                        allDay: Bool? = nil, location: FieldUpdate<String> = .unchanged,
+                                        category: FieldUpdate<String> = .unchanged, schoolSubject: FieldUpdate<String> = .unchanged,
+                                        recur: FieldUpdate<Recurrence> = .unchanged, notes: FieldUpdate<String> = .unchanged,
+                                        now: Date = Date(), id: String = UUID().uuidString.lowercased()) -> OutgoingEvent {
+        var f: [String: Any] = [:]
+        if let apptId { f["apptId"] = apptId }
+        if let path { f["path"] = path }
+        if deleted { f["deleted"] = true }
+        if let title { f["title"] = title }
+        if let date { f["date"] = date }
+        if let allDay { f["allDay"] = allDay }
+        put(&f, "startTime", startTime)
+        put(&f, "endTime", endTime)
+        put(&f, "location", location)
+        put(&f, "category", category)
+        put(&f, "subject", schoolSubject)
+        put(&f, "notes", notes)
+        switch recur {
+        case .unchanged: break
+        case .clear: f["recur"] = NSNull()
+        case .set(let r): f["recur"] = ["days": r.days, "until": r.until]
+        }
+        return make("appointment.patch", f, now: now, id: id)
+    }
+
+    /// Marks one lesson (or planner entry) for one day; state "clear" removes the mark.
+    public static func schoolOverride(key: String, date: String, start: String, end: String?, subject: String?, title: String?,
+                                      state: String, reason: String?, now: Date = Date(), id: String = UUID().uuidString.lowercased()) -> OutgoingEvent {
+        var f: [String: Any] = ["key": key, "date": date, "start": start, "state": state]
+        if let end { f["end"] = end }
+        if let subject, !subject.isEmpty { f["subject"] = subject }
+        if let title, !title.isEmpty { f["title"] = title }
+        if let reason, !reason.isEmpty { f["reason"] = reason }
+        return make("school.override", f, now: now, id: id)
     }
 
     /// A new run note in "Laufzeiten", in the vault's own format: distance "3.02", time 00:16:29.

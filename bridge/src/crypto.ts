@@ -8,7 +8,7 @@
  * Base64 is standard alphabet with padding.
  */
 
-export type EnvelopeKind = "inbox" | "snapshot";
+export type EnvelopeKind = "inbox" | "snapshot" | "wiki";
 
 export interface Envelope {
   tw: 1;

@@ -23,6 +23,7 @@ struct HistoryView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 28)
+                .readableColumn()
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Verlauf")

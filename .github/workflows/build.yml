@@ -110,7 +110,7 @@ jobs:
         run: scripts/screenshots.sh build-sim/Build/Products/Debug-iphonesimulator/Tagwerk.app shots
 
       - name: Screenshots in Branch ablegen
-        if: always() && (github.ref == 'refs/heads/main')
+        if: always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feature/'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

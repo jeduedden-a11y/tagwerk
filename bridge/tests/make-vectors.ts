@@ -9,6 +9,7 @@ import { buildSnapshot } from "../src/snapshot";
 import { DEFAULT_HABITS } from "../src/protocol";
 import { applyEvent, DEFAULT_FITNESS_FOLDERS, type ApplyContext } from "../src/apply";
 import { FakeVault, REAL } from "./fakes";
+import { packWiki } from "../src/wiki";
 
 const out = process.argv[2] ?? "../Packages/TagwerkCore/Tests/TagwerkCoreTests/Vectors.swift";
 const PASS = "Tagwerk Test – Äpfel & Birnen";
@@ -48,8 +49,19 @@ async function main() {
     id: "v-0006-0000", ts: "6", type: "profile.set", summary: "Ziel 2.700 kcal",
     profile: { heightCm: 178, birthYear: 1996, sex: "m", bodyFat: 17.5, targetWeight: 80, activity: "maessig", weeklyRate: 0.25, proteinPerKg: 1.8, fatPercent: 27, tolerance: 10, checkProtein: true, checkFat: false, checkCarbs: false, checkFiber: true, addRuns: true },
   });
+  // Planner (plugin 1.2): weekly lecture, exam, own mark
+  await applyEvent(ctx, { id: "v-0007-0000", ts: "7", type: "appointment.add", apptId: "appt-uni-v", title: "Analysis I", date: "2026-11-02", startTime: "10:15", endTime: "11:45", allDay: false, location: "H I", category: "uni", recur: { days: [1, 3], until: "2027-02-12" } });
+  await applyEvent(ctx, { id: "v-0008-0000", ts: "8", type: "appointment.add", apptId: "appt-kl-v", title: "Klausur", date: "2026-11-05", startTime: "13:45", endTime: "15:15", allDay: false, category: "klausur", subject: "Chemie", notes: "Redox" });
+  await applyEvent(ctx, { id: "v-0009-0000", ts: "9", type: "school.override", key: "u:2026-11-04:07:50:E", date: "2026-11-04", start: "07:50", end: "09:20", subject: "Englisch", state: "abwesend", reason: "Uni" });
   const snap = await buildSnapshot(ctx, { snapshotDays: 400, textDays: 60, pluginVersion: "1.0.0", applied: ["v-0001-0000", "v-0002-0000"], errors: [{ eventId: "x", at: "2026-11-01T17:00:00.000Z", message: "Aufgabe nicht gefunden" }], lastIngestAt: "2026-11-01T17:00:00.000Z" });
   const snapEnv = await seal(JSON.stringify(snap), PASS, "snapshot", { salt: SALT, iterations: ITER });
+
+  const wikiFiles = [
+    { p: "Mathematik/Ableitung.md", m: 1, t: "text", d: "# Ableitung\n\n$$f'(x)$$ und [[Integral|das Integral]], ![[Feld.svg]]\n" },
+    { p: "Physik/_assets/Feld.svg", m: 2, t: "text", d: "<svg xmlns=\"http://www.w3.org/2000/svg\"/>" },
+  ];
+  const wikiBucket = (await packWiki({ v: 1, files: wikiFiles }, PASS, { salt: SALT, iterations: ITER })).bytes;
+  const wikiIndex = (await packWiki({ v: 1, generatedAt: "2026-11-02T16:00:00.000Z", root: "02 Wiki", buckets: [{ id: "b07", hash: "abc", n: 2, bytes: 120 }], files: wikiFiles.map((f) => ({ p: f.p, b: "b07", s: f.d.length, m: f.m })) }, PASS, { salt: SALT, iterations: ITER })).bytes;
 
   const hashes: [string, string][] = [];
   for (const s of ["", "5 km gelaufen.", "5 km gelaufen.\nDanach Mathe.", "  Umlaute: äöü ß \r\n", "Zeile\r\nzwei"]) hashes.push([s, await journalHash(s)]);
@@ -67,6 +79,8 @@ enum Vectors {
     static let umlautEnvelope = ${swiftString(umlaut)}
     static let umlautPlaintext = ${swiftString('{"text":"Größe: 5 km gelaufen – gut"}')}
     static let snapshotEnvelope = ${swiftString(snapEnv)}
+    static let wikiBucketEnvelope = ${swiftString(new TextDecoder().decode(wikiBucket))}
+    static let wikiIndexEnvelope = ${swiftString(new TextDecoder().decode(wikiIndex))}
     static let journalHashes: [(String, String)] = [
 ${hashes.map(([s, h]) => `        (${swiftString(s)}, ${swiftString(h)}),`).join("\n")}
     ]

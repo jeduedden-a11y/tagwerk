@@ -3,6 +3,7 @@ import { DecryptionError, fromB64, open, randomBytes, seal, sha256Hex, toB64, ty
 import { GitHubRepo, type Http } from "./github";
 import type { BridgeError, BridgeEvent, InboxBatch, Snapshot } from "./protocol";
 import { buildSnapshot } from "./snapshot";
+import { emptyWikiState, exportWiki, type WikiState } from "./wiki";
 
 export const INBOX_DIR = "inbox";
 export const SNAPSHOT_PATH = "snapshot.tw";
@@ -16,6 +17,8 @@ export interface BridgeState {
   lastSnapshotSha: string | null;
   /** Base64 salt this device uses for the snapshots it writes. */
   deviceSalt: string | null;
+  /** Upload state of the wiki copy for the app (plugin 1.2). */
+  wiki?: WikiState | null;
 }
 
 export const emptyState = (): BridgeState => ({
@@ -26,6 +29,7 @@ export const emptyState = (): BridgeState => ({
   lastSnapshotHash: null,
   lastSnapshotSha: null,
   deviceSalt: null,
+  wiki: null,
 });
 
 export interface BridgeConfig {
@@ -37,6 +41,8 @@ export interface BridgeConfig {
   snapshotDays: number;
   textDays: number;
   iterations?: number;
+  /** Folder copied for the app's notes; empty to switch the copy off. */
+  wikiFolder?: string;
 }
 
 export interface SyncReport {
@@ -46,6 +52,7 @@ export interface SyncReport {
   failedEvents: number;
   snapshotPublished: boolean;
   message: string;
+  wiki?: string;
 }
 
 export interface BridgeDeps {
@@ -56,6 +63,8 @@ export interface BridgeDeps {
   saveState: () => Promise<void>;
   version: string;
   retryDelayMs?: number;
+  /** Dataview's renderer for the wiki copy (production only). */
+  renderDataview?: (query: string, path: string) => Promise<string | null>;
 }
 
 const MAX_APPLIED = 2000;
@@ -152,6 +161,25 @@ export class Bridge {
           : "Keine neuen Einträge."
         : `${report.appliedEvents} Einträge übernommen${report.failedEvents ? `, ${report.failedEvents} mit Fehler` : ""}.`;
     if (report.failedEvents) report.ok = false;
+
+    // 3. Wiki copy for the app. Its failures never fail the sync of the daily data.
+    if (cfg.wikiFolder) {
+      try {
+        if (!this.d.state.wiki) this.d.state.wiki = emptyWikiState();
+        const r = await exportWiki(this.d.ctx.vault, gh, this.d.state.wiki, {
+          folder: cfg.wikiFolder,
+          passphrase: cfg.passphrase,
+          seal: { salt: this.salt(), iterations: cfg.iterations },
+          now: this.d.ctx.now(),
+          force: !!opts.forceSnapshot,
+          minIntervalMs: 10 * 60_000,
+        }, this.d.renderDataview);
+        report.wiki = r.message;
+        if (!r.skipped) await this.d.saveState();
+      } catch (e) {
+        report.wiki = `Wiki nicht übertragen: ${(e as Error).message}`;
+      }
+    }
     return report;
   }
 

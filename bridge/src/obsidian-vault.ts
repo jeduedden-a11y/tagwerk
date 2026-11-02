@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, normalizePath, parseYaml } from "obsidian";
-import type { Frontmatter, VaultPort } from "./vault";
+import type { Frontmatter, VaultFileStat, VaultPort } from "./vault";
 
 export class ObsidianVault implements VaultPort {
   constructor(private readonly app: App) {}
@@ -49,6 +49,33 @@ export class ObsidianVault implements VaultPort {
     const f = this.app.vault.getAbstractFileByPath(normalizePath(folder));
     if (!(f instanceof TFolder)) return [];
     return f.children.filter((c): c is TFile => c instanceof TFile && c.extension === "md").map((c) => c.path);
+  }
+
+  async listFiles(folder: string): Promise<VaultFileStat[]> {
+    const root = this.app.vault.getAbstractFileByPath(normalizePath(folder));
+    if (!(root instanceof TFolder)) return [];
+    const out: VaultFileStat[] = [];
+    const walk = (f: TFolder) => {
+      for (const c of f.children) {
+        if (c instanceof TFolder) walk(c);
+        else if (c instanceof TFile) out.push({ path: c.path, mtime: c.stat.mtime, size: c.stat.size });
+      }
+    };
+    walk(root);
+    return out;
+  }
+
+  async readBinary(path: string): Promise<Uint8Array> {
+    return new Uint8Array(await this.app.vault.readBinary(this.file(path)));
+  }
+
+  /** Dataview's own renderer, if the plugin is installed and enabled. */
+  async renderDataview(query: string, path: string): Promise<string | null> {
+    const plugins = (this.app as unknown as { plugins?: { plugins?: Record<string, { api?: unknown }> } }).plugins?.plugins;
+    const api = plugins?.dataview?.api as { queryMarkdown?: (q: string, origin?: string) => Promise<{ successful: boolean; value?: string }> } | undefined;
+    if (!api?.queryMarkdown) return null;
+    const r = await api.queryMarkdown(query, path);
+    return r?.successful && typeof r.value === "string" ? r.value : null;
   }
 
   parseYaml(yaml: string): unknown {

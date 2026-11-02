@@ -1,6 +1,6 @@
 import yaml from "js-yaml";
 import { splitFrontmatter } from "../src/markdown";
-import type { Frontmatter, VaultPort } from "../src/vault";
+import type { Frontmatter, VaultFileStat, VaultPort } from "../src/vault";
 import type { Http, HttpRequest, HttpResponse } from "../src/github";
 import { createHash } from "node:crypto";
 
@@ -36,6 +36,22 @@ export class FakeVault implements VaultPort {
     return [...this.files.keys()].filter((k) => k.startsWith(`${folder}/`) && !k.slice(folder.length + 1).includes("/") && k.endsWith(".md"));
   }
   parseYaml(y: string) { return yaml.load(y, { schema: yaml.CORE_SCHEMA }); }
+  /** Binary files (images); text files live in files. */
+  bins = new Map<string, Uint8Array>();
+  mtimes = new Map<string, number>();
+  async listFiles(folder: string): Promise<VaultFileStat[]> {
+    const keys = [...this.files.keys(), ...this.bins.keys()].filter((k) => k.startsWith(`${folder}/`));
+    return keys.map((k) => ({
+      path: k,
+      mtime: this.mtimes.get(k) ?? 1,
+      size: this.bins.get(k)?.length ?? new TextEncoder().encode(this.files.get(k) ?? "").length,
+    }));
+  }
+  async readBinary(p: string) {
+    const b = this.bins.get(p);
+    if (b) return b;
+    return new TextEncoder().encode(await this.read(p));
+  }
   trashed: string[] = [];
   async trash(p: string) {
     if (!this.files.delete(p)) throw new Error(`missing ${p}`);

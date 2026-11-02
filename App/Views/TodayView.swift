@@ -3,6 +3,7 @@ import TagwerkCore
 
 struct TodayView: View {
     @Environment(Store.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var showSettings: Bool
 
     private var title: String {
@@ -30,6 +31,7 @@ struct TodayView: View {
                         }
                         RatingCard(dayKey: key)
                         HabitGrid(dayKey: key)
+                        UpcomingExamsCard()
                         NutritionTodayCard(dayKey: key)
                         JournalCard(dayKey: key)
                         WeightCard(dayKey: key)
@@ -41,6 +43,7 @@ struct TodayView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
                     .padding(.bottom, 28)
+                    .readableColumn()
                     .id(key)
                 }
                 .onAppear {
@@ -59,6 +62,15 @@ struct TodayView: View {
             // Inline: a large title would sit under the week bar's scroll edge effect and blur.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if sizeClass == .compact {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            store.requestedTab = .verlauf
+                        } label: {
+                            Label("Verlauf", systemImage: "chart.bar.fill")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true

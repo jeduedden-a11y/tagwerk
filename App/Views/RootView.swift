@@ -7,12 +7,13 @@ final class BackgroundTaskBox: @unchecked Sendable {
 }
 
 enum AppTab: String, Hashable {
-    case heute, fitness, aufgaben, termine, verlauf
+    case heute, planer, aufgaben, fitness, notizen, verlauf
 }
 
 struct RootView: View {
     @Environment(Store.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var tab: AppTab
     @State private var showSettings: Bool
     @State private var interrupted: RecordingSnapshot?
@@ -28,21 +29,27 @@ struct RootView: View {
             Tab("Heute", systemImage: "sun.max.fill", value: AppTab.heute) {
                 TodayView(showSettings: $showSettings)
             }
-            Tab("Fitness", systemImage: "figure.run", value: AppTab.fitness) {
-                FitnessView(showSettings: $showSettings)
+            Tab("Planer", systemImage: "calendar", value: AppTab.planer) {
+                PlannerView(showSettings: $showSettings)
             }
+            .badge(store.openSuggestions.count)
             Tab("Aufgaben", systemImage: "checklist", value: AppTab.aufgaben) {
                 TasksView(showSettings: $showSettings)
             }
             .badge(store.overdueCount)
-            Tab("Termine", systemImage: "calendar", value: AppTab.termine) {
-                AppointmentsView(showSettings: $showSettings)
+            Tab("Fitness", systemImage: "figure.run", value: AppTab.fitness) {
+                FitnessView(showSettings: $showSettings)
             }
-            .badge(store.openSuggestions.count)
+            Tab("Notizen", systemImage: "books.vertical.fill", value: AppTab.notizen) {
+                NotesView(showSettings: $showSettings)
+            }
+            // On the iPhone the bar has room for five; Verlauf opens from Heute there.
             Tab("Verlauf", systemImage: "chart.bar.fill", value: AppTab.verlauf) {
                 HistoryView(showSettings: $showSettings)
             }
+            .defaultVisibility(sizeClass == .compact ? .hidden : .automatic, for: .tabBar)
         }
+        .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewBottomAccessory {
             SyncAccessory(showSettings: $showSettings)

@@ -73,8 +73,9 @@ final class SnapshotTests: XCTestCase {
         XCTAssertEqual(snap.tasks.count, 2)
         XCTAssertEqual(snap.tasks.first?.title, "Reisepass")
         XCTAssertEqual(snap.tasks.first?.notes, "Beim Amt nachfragen.")
-        XCTAssertEqual(snap.appointments.first?.startTime, "13:30")
-        XCTAssertEqual(snap.appointments.first?.location, "Raum 204")
+        let team = snap.appointments.first { $0.apptId == "appt-v1" }
+        XCTAssertEqual(team?.startTime, "13:30")
+        XCTAssertEqual(team?.location, "Raum 204")
         XCTAssertEqual(snap.applied, ["v-0001-0000", "v-0002-0000"])
         XCTAssertEqual(snap.errors.first?.message, "Aufgabe nicht gefunden")
     }

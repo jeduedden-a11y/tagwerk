@@ -7,7 +7,7 @@ import CommonCrypto
 //   ct  = AES-256-GCM(key, iv[12], plaintext, aad = "tagwerk:" + kind) -> ciphertext || tag[16]
 
 public enum EnvelopeKind: String, Codable, Sendable {
-    case inbox, snapshot
+    case inbox, snapshot, wiki
 }
 
 public struct Envelope: Codable, Sendable {

@@ -20,6 +20,7 @@ struct FitnessView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
                 .padding(.bottom, 28)
+                .readableColumn()
                 .animation(.smooth, value: store.fitnessPage)
             }
             .scrollDismissesKeyboard(.interactively)

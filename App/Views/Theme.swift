@@ -95,6 +95,11 @@ struct CardSurface: ViewModifier {
 
 extension View {
     func card(padding: CGFloat = 16) -> some View { modifier(CardSurface(padding: padding)) }
+
+    /// Keeps pages readable on the iPad: one centred column instead of full width.
+    func readableColumn(_ maxWidth: CGFloat = 760) -> some View {
+        frame(maxWidth: maxWidth).frame(maxWidth: .infinity)
+    }
 }
 
 /// Slight press-down for custom tappable tiles.

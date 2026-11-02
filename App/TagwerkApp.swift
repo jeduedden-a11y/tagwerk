@@ -11,7 +11,7 @@ struct TagwerkApp: App {
         let defaults = UserDefaults.standard
         let tabArg = defaults.string(forKey: "TWTab") ?? ""
         _store = State(initialValue: Store(demo: defaults.bool(forKey: "TWDemo")))
-        initialTab = AppTab(rawValue: tabArg) ?? .heute
+        initialTab = AppTab(rawValue: tabArg) ?? (tabArg == "termine" ? .planer : .heute)
         openSettings = tabArg == "einstellungen"
     }
 

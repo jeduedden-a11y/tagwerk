@@ -10,6 +10,10 @@ struct SettingsView: View {
     @State private var token = ""
     @State private var passphrase = ""
     @State private var claudeKey = ""
+    @State private var untisAddress = ""
+    @State private var untisPassword = ""
+    @State private var untisResult: String?
+    @State private var untisTesting = false
     @State private var testResult: String?
     @State private var testing = false
     @State private var calendars: [EKCalendar] = []
@@ -21,6 +25,8 @@ struct SettingsView: View {
                 vaultSection
                 aiSection
                 mailSection
+                untisSection
+                notesSection
                 calendarSection
                 notificationSection
                 Section {
@@ -33,8 +39,8 @@ struct SettingsView: View {
                 }
                 Section {
                     LabeledContent("Plugin im Vault", value: store.state.pluginVersion ?? "noch kein Stand")
-                    if !store.state.bridgeFeatures.contains("food") {
-                        Text("Läufe, Ernährung und Körperprofil braucht Tagwerk Bridge 1.1 in Obsidian. Bis dahin bleiben diese Einträge auf dem iPhone und gehen danach automatisch raus.")
+                    if !store.state.bridgeFeatures.contains("planner") {
+                        Text("Planer-Einträge, Klausuren und die Notizen brauchen Tagwerk Bridge 1.2 in Obsidian. Bis dahin bleiben neue Einträge auf dem Gerät und gehen danach automatisch raus.")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
@@ -73,6 +79,7 @@ struct SettingsView: View {
                 // onAppear erneut und würde die eben eingegebenen Werte wieder verwerfen.
                 if !loaded {
                     draft = store.state.settings
+                    untisAddress = draft.untis.server
                     loaded = true
                 }
                 if CalendarService.shared.hasAccess { calendars = CalendarService.shared.calendars() }
@@ -161,6 +168,82 @@ struct SettingsView: View {
         }
     }
 
+    private var untisSection: some View {
+        Section {
+            TextField("Adresse, z. B. schule.webuntis.com", text: $untisAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .onChange(of: untisAddress) { _, v in
+                    let parsed = UntisConfig.parse(v)
+                    draft.untis.server = parsed.server
+                    if let school = parsed.school, draft.untis.school.isEmpty || v.contains("://") { draft.untis.school = school }
+                }
+            TextField("Schule (Kürzel in WebUntis)", text: $draft.untis.school)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Benutzername", text: $draft.untis.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.username)
+            SecureField(placeholder(SecretKey.untisPassword, "Passwort"), text: $untisPassword)
+                .textContentType(.password)
+            Button {
+                untisTesting = true
+                saveUntis()
+                Task {
+                    untisResult = await store.testUntis()
+                    untisTesting = false
+                    if store.untisReady { await store.refreshUntis(force: true) }
+                }
+            } label: {
+                HStack {
+                    Text("Anmeldung prüfen")
+                    if untisTesting { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(untisTesting || draft.untis.server.isEmpty || draft.untis.username.isEmpty)
+            if let untisResult {
+                Text(untisResult)
+                    .font(.footnote)
+                    .foregroundStyle(untisResult.hasPrefix("Verbunden") ? Color.green : Color.orange)
+            }
+        } header: {
+            Text("WebUntis")
+        } footer: {
+            Text("Füge die Adresse aus dem Browser ein, mit der du deinen Stundenplan öffnest. Das Passwort bleibt im Schlüsselbund dieses Geräts. Tagwerk liest nur: Stundenplan, Entfall, Klausuren und Mitteilungen. Geht die Anmeldung über einen Schul- oder Microsoft-Login, funktioniert sie hier nicht.")
+        }
+    }
+
+    private var notesSection: some View {
+        Section {
+            LabeledContent("Notizen offline", value: store.wiki.isEmpty ? "noch keine" : "\(store.wiki.notes.count)")
+            if let g = store.wiki.generatedAt {
+                LabeledContent("Stand vom PC", value: Format.relative(g))
+            }
+            Button("Alle Notizen neu laden") {
+                Task { await store.syncWiki(force: true) }
+            }
+            .disabled(store.wiki.syncing || !store.isConnected)
+        } header: {
+            Text("Notizen")
+        } footer: {
+            Text("Das Plugin legt den Wiki-Ordner verschlüsselt im Daten-Repo ab; die App lädt nur geänderte Teile und hält alles auf dem Gerät. Ändern kannst du die Notizen nur in Obsidian.")
+        }
+    }
+
+    private func saveUntis() {
+        draft.untis.server = draft.untis.server.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.untis.school = draft.untis.school.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.untis.username = draft.untis.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        store.state.settings.untis = draft.untis
+        if !untisPassword.isEmpty {
+            store.keychain.set(untisPassword, for: SecretKey.untisPassword)
+            untisPassword = ""
+        }
+        store.resetUntisSession()
+    }
+
     private var calendarSection: some View {
         Section {
             Toggle("Übernommene Termine in den Kalender", isOn: $draft.calendarExport)
@@ -218,6 +301,7 @@ struct SettingsView: View {
     private func save() {
         draft.github.owner = draft.github.owner.trimmingCharacters(in: .whitespaces)
         draft.github.repo = draft.github.repo.trimmingCharacters(in: .whitespaces)
+        saveUntis()
         store.state.settings = draft
         if !token.isEmpty { store.keychain.set(token.trimmingCharacters(in: .whitespacesAndNewlines), for: SecretKey.githubToken) }
         if !passphrase.isEmpty { store.keychain.set(passphrase, for: SecretKey.passphrase) }

@@ -85,6 +85,54 @@ export interface AppointmentAddEvent extends EventBase {
   location?: string | null;
   notes?: string | null;
   source?: AppointmentSource | null;
+  /** "klausur", "uni", "schule" or "termin" (planner feature). */
+  category?: AppointmentCategory | null;
+  /** School subject, e.g. "Chemie" (exams). */
+  subject?: string | null;
+  /** Weekly repetition; date is the first occurrence. */
+  recur?: Recurrence | null;
+}
+
+export type AppointmentCategory = "klausur" | "uni" | "schule" | "termin";
+export const CATEGORIES: readonly AppointmentCategory[] = ["klausur", "uni", "schule", "termin"];
+
+/** Weekly on the given ISO weekdays (1 = Monday ... 7 = Sunday) until the given day. */
+export interface Recurrence {
+  days: number[];
+  until: string;
+}
+
+/** Changes or deletes an appointment note (found by tagwerk_id or path). */
+export interface AppointmentPatchEvent extends EventBase {
+  type: "appointment.patch";
+  apptId?: string | null;
+  path?: string | null;
+  deleted?: boolean;
+  title?: string;
+  date?: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  allDay?: boolean;
+  location?: string | null;
+  category?: AppointmentCategory | null;
+  subject?: string | null;
+  recur?: Recurrence | null;
+  notes?: string | null;
+}
+
+export type OverrideState = "entfall" | "abwesend" | "anwesend";
+
+/** A lesson (or a planner entry) the user marks for one day; state "clear" removes the mark. */
+export interface SchoolOverrideEvent extends EventBase {
+  type: "school.override";
+  key: string;
+  date: string;
+  start: string;
+  end?: string | null;
+  subject?: string | null;
+  title?: string | null;
+  state: OverrideState | "clear";
+  reason?: string | null;
 }
 
 /** A new note in the runs folder, in the vault's format: distance "3.02", time 00:16:29. */
@@ -203,13 +251,15 @@ export type BridgeEvent =
   | TaskCreateEvent
   | TaskPatchEvent
   | AppointmentAddEvent
+  | AppointmentPatchEvent
+  | SchoolOverrideEvent
   | RunAddEvent
   | RunPatchEvent
   | FoodDayEvent
   | ProfileSetEvent;
 
 /** Event families this plugin understands; the app holds back events of families not listed. */
-export const FEATURES = ["runs", "food", "profile"] as const;
+export const FEATURES = ["runs", "food", "profile", "planner", "wiki"] as const;
 
 /** Plaintext of one inbox file. */
 export interface InboxBatch {
@@ -265,11 +315,29 @@ export interface SnapshotAppointment {
   path: string;
   apptId: string | null;
   title: string;
+  /** First occurrence for recurring notes. */
   date: string;
   startTime: string | null;
   endTime: string | null;
   allDay: boolean;
   location: string | null;
+  category: string | null;
+  subject: string | null;
+  recur: Recurrence | null;
+  /** Body text below the heading, shortened. */
+  notes: string | null;
+}
+
+export interface SchoolOverride {
+  key: string;
+  date: string;
+  start: string;
+  end: string | null;
+  subject: string | null;
+  title: string | null;
+  state: OverrideState;
+  reason: string | null;
+  updated: string;
 }
 
 export interface BridgeError {
@@ -314,6 +382,7 @@ export interface Snapshot {
   runs: SnapshotRun[];
   foodDays: SnapshotFoodDay[];
   profile: BodyProfile | null;
+  schoolOverrides: SchoolOverride[];
 }
 
 export const DEFAULT_HABITS: HabitConfig[] = [
@@ -381,6 +450,16 @@ export function profileProblem(p: unknown): string | null {
   for (const k of ["checkProtein", "checkFat", "checkCarbs", "checkFiber", "addRuns"]) if (typeof v[k] !== "boolean") return k;
   return null;
 }
+export function recurProblem(r: unknown, start: string | null): string | null {
+  if (!r || typeof r !== "object") return "kein Objekt";
+  const v = r as Record<string, unknown>;
+  if (!Array.isArray(v.days) || v.days.length === 0 || v.days.length > 7) return "days";
+  if (!v.days.every((d) => Number.isInteger(d) && (d as number) >= 1 && (d as number) <= 7)) return "days";
+  if (!isDate(v.until)) return "until";
+  if (start && (v.until as string) < start) return "until vor dem Beginn";
+  return null;
+}
+
 export const isRating = (s: unknown): s is string => typeof s === "string" && RATING_RE.test(s);
 export const isWeight = (s: unknown): s is string => typeof s === "string" && WEIGHT_RE.test(s);
 
@@ -426,6 +505,31 @@ export function validateEvent(ev: BridgeEvent): void {
       if (!isDate(ev.date)) fail("date");
       if (ev.startTime != null && !isTime(ev.startTime)) fail("startTime");
       if (ev.endTime != null && !isTime(ev.endTime)) fail("endTime");
+      if (ev.category != null && !CATEGORIES.includes(ev.category)) fail("category");
+      if (ev.subject != null && (typeof ev.subject !== "string" || ev.subject.length > 60)) fail("subject");
+      if (ev.recur != null && recurProblem(ev.recur, ev.date)) fail(`recur: ${recurProblem(ev.recur, ev.date)}`);
+      return;
+    case "appointment.patch":
+      if (!ev.apptId && !ev.path) fail("apptId oder path nötig");
+      if (ev.deleted !== undefined && typeof ev.deleted !== "boolean") fail("deleted");
+      if (ev.title !== undefined && (typeof ev.title !== "string" || !ev.title.trim())) fail("title");
+      if (ev.date !== undefined && !isDate(ev.date)) fail("date");
+      if (ev.startTime != null && !isTime(ev.startTime)) fail("startTime");
+      if (ev.endTime != null && !isTime(ev.endTime)) fail("endTime");
+      if (ev.allDay !== undefined && typeof ev.allDay !== "boolean") fail("allDay");
+      if (ev.category != null && !CATEGORIES.includes(ev.category)) fail("category");
+      if (ev.recur != null && recurProblem(ev.recur, ev.date ?? null)) fail(`recur: ${recurProblem(ev.recur, ev.date ?? null)}`);
+      return;
+    case "school.override":
+      if (typeof ev.key !== "string" || !ev.key || ev.key.length > 200) fail("key");
+      if (!isDate(ev.date)) fail("date");
+      if (!isTime(ev.start)) fail("start");
+      if (ev.end != null && !isTime(ev.end)) fail("end");
+      if (!["entfall", "abwesend", "anwesend", "clear"].includes(ev.state)) fail("state");
+      for (const k of ["subject", "title", "reason"] as const) {
+        const v = ev[k];
+        if (v != null && (typeof v !== "string" || v.length > 200)) fail(k);
+      }
       return;
     case "run.add":
       if (typeof ev.runId !== "string" || ev.runId.length < 8) fail("runId");

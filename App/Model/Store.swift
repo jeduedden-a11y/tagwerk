@@ -32,6 +32,13 @@ final class Store {
     var foodIndexReady = false
     let recorder = RunRecorder()
 
+    // Planner and notes
+    var plannerDay: String = DayKey.today()
+    var untisInFlight = false
+    let wiki = WikiStore()
+    @ObservationIgnored var untisClientCache: UntisClient?
+    @ObservationIgnored var untisClientKey = ""
+
     let isDemo: Bool
     let keychain = Keychain()
 
@@ -56,6 +63,8 @@ final class Store {
             state = AppState()
         }
         selectedDay = DayKey.today()
+        plannerDay = DayKey.today()
+        if demo { wiki.loadDemo(DemoData.wiki) }
         if let page = UserDefaults.standard.string(forKey: "TWFitness").flatMap(FitnessPage.init(rawValue:)) { fitnessPage = page }
     }
 
