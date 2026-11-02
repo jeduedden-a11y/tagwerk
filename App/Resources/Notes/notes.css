@@ -7,7 +7,6 @@
   --code: rgba(118, 118, 128, 0.12);
   --link: #0a72c4;
   --mark: rgba(255, 214, 10, 0.45);
-  --figure: #1e1e1e;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -60,8 +59,16 @@ th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; ver
 th { background: var(--code); }
 .katex { font-size: 1.08em; }
 .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; margin: 0.8em 0; }
-.figure { display: block; margin: 0.9em 0; padding: 12px; background: var(--figure); border-radius: 14px; text-align: center; }
-.figure img { max-width: 100%; height: auto; display: inline-block; }
+/* Figures: the backdrop follows the figure's own ink (set by the renderer), not the app's appearance. */
+.figure { display: block; margin: 0.9em auto; padding: 12px; border-radius: 14px; text-align: center; }
+.figure img { max-width: 100%; height: auto; display: inline-block; vertical-align: middle; transition: opacity 0.15s; }
+.figure[data-tone="pending"] img { opacity: 0; }
+.figure[data-tone="light-ink"], .figure[data-kind="svg"][data-tone="unknown"] { background: #1e1e1e; }
+.figure[data-tone="dark-ink"] { background: #ffffff; box-shadow: inset 0 0 0 1px var(--line); }
+.figure[data-tone="own"], .figure[data-tone="missing"], .figure[data-kind="raster"][data-tone="unknown"] { padding: 0; }
+.figure[data-tone="own"] img, .figure[data-kind="raster"] img { border-radius: 10px; }
+/* The PDF export keeps panels and tints; without them white figure text would vanish on paper. */
+.figure, .callout, .tag, mark, code, pre, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .missing { color: var(--muted); font-size: 0.9em; }
 iframe.embed-html { width: 100%; min-height: 360px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .embed-note { display: block; padding: 10px 14px; margin: 0.8em 0; border: 1px solid var(--line); border-radius: 12px; }
@@ -88,6 +95,7 @@ details.callout[open] > summary::after { transform: rotate(90deg); }
 .callout[data-callout="quote"] { --c: 142, 142, 147; }
 .callout[data-callout="important"] { --c: 0, 168, 200; }
 @media (prefers-color-scheme: dark) {
+  .figure[data-tone="dark-ink"] { background: #f2f2f2; box-shadow: none; }
   .callout { background: rgba(var(--c), 0.16); }
   .callout[data-callout="question"] { --c: 236, 178, 46; }
 }

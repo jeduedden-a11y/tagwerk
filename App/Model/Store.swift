@@ -28,6 +28,8 @@ final class Store {
     var showRecorder = false
     var runEntry: RunEntryRequest?
     var requestedTab: AppTab?
+    /// Verlauf pushed onto Heute (compact width, where it is not a tab).
+    var showHistory = false
     var fitnessPage: FitnessPage = .ernaehrung
     var foodIndexReady = false
     let recorder = RunRecorder()

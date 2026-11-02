@@ -19,18 +19,21 @@ enum PlannerStyle {
         }
     }
 
+    /// Word badge for the day view. Week columns are too narrow for words; there strikethrough, dimming,
+    /// the orange frame (changed), the dashed frame (suggestion) and the exam colour carry the same information.
     static func badge(_ e: PlannerEntry, compact: Bool = false) -> String? {
+        if compact { return nil }
         switch e.mark {
         case .cancelledBySchool: return "Entfall"
         case .cancelledByMe: return e.kind == .lesson ? "Entfall" : "fällt aus"
-        case .absent(let r): return compact ? "fehlt" : r
+        case .absent(let r): return r
         case .uni: return "Uni"
-        case .present: return compact ? nil : "da"
-        case .changed: return compact ? nil : "geändert"
+        case .present: return "da"
+        case .changed: return "geändert"
         case .none: break
         }
         switch e.kind {
-        case .exam, .klausur: return compact ? nil : "Klausur"
+        case .exam, .klausur: return "Klausur"
         case .suggestion: return "Vorschlag"
         default: return nil
         }
@@ -373,7 +376,24 @@ struct PlannerTimeline: View {
     let isToday: Bool
     let onSelect: (PlannerEntry) -> Void
 
+    /// In the narrow week columns a lesson that is off (cancelled, skipped, replaced by Uni) and overlaps
+    /// something that does take place would squeeze both into unreadable slivers. The week therefore shows
+    /// what actually happens there; the day view keeps both side by side.
+    private var shown: [PlannerEntry] {
+        guard compact else { return entries }
+        let active = entries.filter { !$0.isOff && $0.start != nil }
+        return entries.filter { e in
+            guard e.isOff, let s = e.start else { return true }
+            let end = max(e.end ?? s + 30, s + 1)
+            return !active.contains { o in
+                guard let os = o.start else { return false }
+                return os < end && s < max(o.end ?? os + 30, os + 1)
+            }
+        }
+    }
+
     var body: some View {
+        let entries = shown
         let cols = Planner.columns(entries)
         let height = CGFloat(hours.upperBound - hours.lowerBound) * hourHeight
         GeometryReader { geo in
@@ -462,6 +482,7 @@ struct PlannerBlock: View {
                     .font(compact ? .caption2.weight(.semibold) : .subheadline.weight(.semibold))
                     .strikethrough(off)
                     .lineLimit(compact ? 2 : 1)
+                    .minimumScaleFactor(compact ? 0.8 : 1)
                 Spacer(minLength: 0)
                 if let b = PlannerStyle.badge(entry, compact: compact) {
                     Text(b)

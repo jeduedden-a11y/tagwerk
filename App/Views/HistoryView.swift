@@ -2,38 +2,48 @@ import Charts
 import SwiftUI
 import TagwerkCore
 
+/// Verlauf as its own tab (regular width).
 struct HistoryView: View {
+    @Binding var showSettings: Bool
+
+    var body: some View {
+        NavigationStack {
+            HistoryContent(showSettings: $showSettings)
+        }
+    }
+}
+
+/// The page itself; in compact width it is pushed onto Heute.
+struct HistoryContent: View {
     @Environment(Store.self) private var store
     @Binding var showSettings: Bool
     @State private var window = 30
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    Picker("Zeitraum", selection: $window.animation(.smooth)) {
-                        Text("7 Tage").tag(7)
-                        Text("30 Tage").tag(30)
-                        Text("90 Tage").tag(90)
-                    }
-                    .pickerStyle(.segmented)
-                    RatingChartCard(window: window)
-                    HabitStatsCard(window: window)
-                    WeightChartCard(window: window)
+        ScrollView {
+            VStack(spacing: 14) {
+                Picker("Zeitraum", selection: $window.animation(.smooth)) {
+                    Text("7 Tage").tag(7)
+                    Text("30 Tage").tag(30)
+                    Text("90 Tage").tag(90)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 28)
-                .readableColumn()
+                .pickerStyle(.segmented)
+                RatingChartCard(window: window)
+                HabitStatsCard(window: window)
+                WeightChartCard(window: window)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Verlauf")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Label("Einstellungen", systemImage: "gearshape")
-                    }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
+            .readableColumn()
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle("Verlauf")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Label("Einstellungen", systemImage: "gearshape")
                 }
             }
         }

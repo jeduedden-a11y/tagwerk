@@ -13,7 +13,8 @@ struct NotePayload: Encodable, Equatable {
     var heading: String?
 }
 
-/// Serves the renderer (twnote://app/...) and the wiki's images and HTML files (twnote://embed?t=...&from=...).
+/// Serves the renderer (twnote://app/...) and the wiki's images and HTML files (twnote://app/embed?t=...&from=...).
+/// Embeds share the page's origin so the renderer can read an SVG's source and pick a backdrop it stays legible on.
 @MainActor
 final class NoteSchemeHandler: NSObject, WKURLSchemeHandler {
     let lookup: @MainActor (_ target: String, _ from: String) -> Data?
@@ -50,14 +51,15 @@ final class NoteSchemeHandler: NSObject, WKURLSchemeHandler {
         guard let url = task.request.url else { return }
         var data: Data?
         var name = url.lastPathComponent
-        if url.host == "app" {
-            data = Self.bundleData(name)
-        } else if url.host == "embed" {
+        let isEmbed = (url.host == "app" && url.path == "/embed") || url.host == "embed"
+        if isEmbed {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let target = items.first { $0.name == "t" }?.value ?? ""
             let from = items.first { $0.name == "from" }?.value ?? ""
             name = target
             data = lookup(target, from)
+        } else if url.host == "app" {
+            data = Self.bundleData(name)
         }
         guard let data else {
             task.didFailWithError(URLError(.fileDoesNotExist))
@@ -65,7 +67,15 @@ final class NoteSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         let mime = Self.mime(name)
         let textual = mime.hasPrefix("text/") || mime.hasSuffix("svg+xml")
-        task.didReceive(URLResponse(url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: textual ? "utf-8" : nil))
+        // An HTTP response with status 200, so fetch() in the page sees an ordinary successful load.
+        let headers = [
+            "Content-Type": textual ? "\(mime); charset=utf-8" : mime,
+            "Content-Length": String(data.count),
+            "Cache-Control": "no-cache",
+        ]
+        let response: URLResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)
+            ?? URLResponse(url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: textual ? "utf-8" : nil)
+        task.didReceive(response)
         task.didReceive(data)
         task.didFinish()
     }
@@ -85,6 +95,8 @@ struct NoteWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(NoteSchemeHandler(lookup: lookup), forURLScheme: "twnote")
         config.dataDetectorTypes = [.link]
+        // Figure panels and callout tints belong to the content; the PDF export keeps them.
+        config.preferences.shouldPrintBackgrounds = true
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
         web.backgroundColor = .clear

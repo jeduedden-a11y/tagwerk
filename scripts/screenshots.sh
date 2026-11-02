@@ -1,84 +1,110 @@
 #!/bin/bash
-# Boots a simulator, installs the demo build and captures every tab in light and dark mode.
-set -euo pipefail
+# Boots simulators, installs the demo build and captures the main screens: iPhone in dark and light mode,
+# iPad in dark mode. Every simulator call has its own time limit and the whole run a budget (seconds,
+# third argument), so a slow or stuck simulator costs screenshots, never the build.
+set -uo pipefail
 APP="$1"
 OUT="${2:-shots}"
+BUDGET="${3:-1500}"
+START=$SECONDS
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
-UDID="$(python3 scripts/pick-simulator.py)"
+LANG_ARGS=(-AppleLanguages "(de)" -AppleLocale de_DE)
 mkdir -p "$OUT"
-xcrun simctl boot "$UDID" || true
-xcrun simctl bootstatus "$UDID" -b
-xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 || true
-xcrun simctl install "$UDID" "$APP"
-# Right after boot the simulator is busy with its own setup and a launch can miss the wait.
-sleep 20
 
-# A launch that has not drawn its first frame yet leaves the plain launch screen (about 75 KB);
-# real screens are several hundred KB. Wait and capture again in that case.
-capture() {
-  local file="$1"
-  for _ in 1 2 3 4; do
-    xcrun simctl io "$UDID" screenshot "$file" >/dev/null
-    [ "$(stat -f%z "$file")" -gt 150000 ] && return 0
-    sleep 5
-  done
-  echo "warning: $file still looks empty"
+# Runs a command with a time limit (macOS has no timeout(1); the alarm survives exec).
+limit() {
+  local seconds="$1"
+  shift
+  perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
 }
-for appearance in light dark; do
-  xcrun simctl ui "$UDID" appearance "$appearance"
-  for tab in heute planer aufgaben notizen verlauf einstellungen; do
-    xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
-    xcrun simctl launch "$UDID" "$BUNDLE_ID" -TWDemo YES -TWTab "$tab" -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-    sleep 7
-    capture "$OUT/$appearance-$tab.png"
-    echo "captured $appearance-$tab"
-  done
-  for page in ernaehrung laufen gewicht; do
-    xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
-    xcrun simctl launch "$UDID" "$BUNDLE_ID" -TWDemo YES -TWTab fitness -TWFitness "$page" -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-    sleep 11
-    capture "$OUT/$appearance-fitness-$page.png"
-    echo "captured $appearance-fitness-$page"
-  done
-  xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
-  xcrun simctl launch "$UDID" "$BUNDLE_ID" -TWDemo YES -TWTab heute -TWScroll unten -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-  sleep 7
-  capture "$OUT/$appearance-heute-unten.png"
-  # Week view of the planner and one rendered note
-  xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
-  xcrun simctl launch "$UDID" "$BUNDLE_ID" -TWDemo YES -TWTab planer -TWPlanner woche -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-  sleep 8
-  capture "$OUT/$appearance-planer-woche.png"
-  xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
-  xcrun simctl launch "$UDID" "$BUNDLE_ID" -TWDemo YES -TWTab notizen -TWNote "Mathematik/Analysis/Ableitung.md" -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-  sleep 11
-  capture "$OUT/$appearance-notiz.png"
-done
-# iPad: the same app in regular width
-IPAD="$(python3 scripts/pick-simulator.py ipad || true)"
-if [ -n "$IPAD" ]; then
-  xcrun simctl boot "$IPAD" || true
-  xcrun simctl bootstatus "$IPAD" -b
-  xcrun simctl status_bar "$IPAD" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 || true
-  xcrun simctl install "$IPAD" "$APP"
+
+left() { echo $((BUDGET - (SECONDS - START))); }
+
+boot() {
+  local udid="$1"
+  limit 60 xcrun simctl boot "$udid" 2>/dev/null || true
+  limit 900 xcrun simctl bootstatus "$udid" -b >/dev/null || return 1
+  limit 30 xcrun simctl status_bar "$udid" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 >/dev/null 2>&1 || true
+  limit 300 xcrun simctl install "$udid" "$APP" || return 1
+  # Right after boot the simulator is busy with its own setup and the first launch is slow.
   sleep 15
-  xcrun simctl ui "$IPAD" appearance dark
-  for tab in heute planer notizen; do
-    xcrun simctl terminate "$IPAD" "$BUNDLE_ID" 2>/dev/null || true
-    xcrun simctl launch "$IPAD" "$BUNDLE_ID" -TWDemo YES -TWTab "$tab" -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-    sleep 10
-    UDID="$IPAD" capture "$OUT/ipad-$tab.png"
-    echo "captured ipad-$tab"
+}
+
+# Launches the demo with the given arguments and captures once the screen has settled: larger than the
+# plain launch screen (about 75 KB) and unchanged between two captures, whatever the runner's speed.
+shot() {
+  local udid="$1" name="$2"
+  shift 2
+  if [ "$(left)" -lt 45 ]; then
+    echo "skipped $name (time budget used up)"
+    return 0
+  fi
+  local file="$OUT/$name.png" prev=0 size diff
+  limit 30 xcrun simctl terminate "$udid" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  if ! limit 90 xcrun simctl launch "$udid" "$BUNDLE_ID" -TWDemo YES "$@" "${LANG_ARGS[@]}" >/dev/null; then
+    echo "warning: launch for $name failed"
+    return 0
+  fi
+  sleep 4
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if limit 45 xcrun simctl io "$udid" screenshot "$file" >/dev/null 2>&1; then
+      size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+      diff=$((size > prev ? size - prev : prev - size))
+      if [ "$size" -gt 150000 ] && [ "$diff" -lt $((size / 300)) ]; then
+        echo "captured $name ($((SECONDS - START)) s)"
+        return 0
+      fi
+      prev=$size
+    fi
+    sleep 2
   done
-  xcrun simctl terminate "$IPAD" "$BUNDLE_ID" 2>/dev/null || true
-  xcrun simctl launch "$IPAD" "$BUNDLE_ID" -TWDemo YES -TWTab notizen -TWNote "Mathematik/Analysis/Ableitung.md" -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-  sleep 11
-  UDID="$IPAD" capture "$OUT/ipad-notiz.png"
-  xcrun simctl shutdown "$IPAD" || true
+  echo "warning: $name did not settle"
+}
+
+iphone_set() {
+  local udid="$1" appearance="$2"
+  limit 30 xcrun simctl ui "$udid" appearance "$appearance" || true
+  for tab in heute planer aufgaben notizen verlauf einstellungen; do
+    shot "$udid" "$appearance-$tab" -TWTab "$tab"
+  done
+  shot "$udid" "$appearance-planer-woche" -TWTab planer -TWPlanner woche
+  shot "$udid" "$appearance-notiz" -TWTab notizen -TWNote "Mathematik/Analysis/Ableitung.md"
+  shot "$udid" "$appearance-heute-unten" -TWTab heute -TWScroll unten
+  for page in ernaehrung laufen gewicht; do
+    shot "$udid" "$appearance-fitness-$page" -TWTab fitness -TWFitness "$page"
+  done
+}
+
+UDID="$(python3 scripts/pick-simulator.py)"
+if ! boot "$UDID"; then
+  echo "warning: iPhone simulator did not boot"
+  exit 0
 fi
+iphone_set "$UDID" dark
+
+# iPad: the same app in regular width (sidebar, wide planner, note column).
+IPAD="$(python3 scripts/pick-simulator.py ipad || true)"
+if [ -n "$IPAD" ] && [ "$(left)" -gt 420 ]; then
+  if boot "$IPAD"; then
+    limit 30 xcrun simctl ui "$IPAD" appearance dark || true
+    shot "$IPAD" ipad-heute -TWTab heute
+    shot "$IPAD" ipad-planer -TWTab planer
+    shot "$IPAD" ipad-planer-woche -TWTab planer -TWPlanner woche
+    shot "$IPAD" ipad-notiz -TWTab notizen -TWNote "Mathematik/Analysis/Ableitung.md"
+    shot "$IPAD" ipad-verlauf -TWTab verlauf
+  else
+    echo "warning: iPad simulator did not boot"
+  fi
+  limit 120 xcrun simctl shutdown "$IPAD" >/dev/null 2>&1 || true
+fi
+
+iphone_set "$UDID" light
+
 # First launch without demo data: what a new installation shows.
-xcrun simctl ui "$UDID" appearance light
-xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
-xcrun simctl launch "$UDID" "$BUNDLE_ID" -AppleLanguages "(de)" -AppleLocale de_DE >/dev/null
-sleep 7
-capture "$OUT/light-erststart.png"
+if [ "$(left)" -gt 45 ]; then
+  limit 30 xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  limit 90 xcrun simctl launch "$UDID" "$BUNDLE_ID" "${LANG_ARGS[@]}" >/dev/null && sleep 8 &&
+    limit 45 xcrun simctl io "$UDID" screenshot "$OUT/light-erststart.png" >/dev/null 2>&1 && echo "captured light-erststart"
+fi
+echo "screenshots done in $((SECONDS - START)) s"
+exit 0

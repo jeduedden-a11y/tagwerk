@@ -44,7 +44,7 @@ jobs:
   ios:
     name: iPhone-App
     runs-on: ${{ inputs.runner || 'macos-26' }}
-    timeout-minutes: 60
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@v4
 
@@ -111,8 +111,12 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build-sim \
             build 2>&1 | tail -5
 
+      # Screenshots are for checking the UI, not a condition for the release: a slow or stuck simulator
+      # ends this step after its budget, and the IPA is still uploaded and released.
       - name: Screenshots
-        run: scripts/screenshots.sh build-sim/Build/Products/Debug-iphonesimulator/Tagwerk.app shots
+        timeout-minutes: 32
+        continue-on-error: true
+        run: scripts/screenshots.sh build-sim/Build/Products/Debug-iphonesimulator/Tagwerk.app shots 1680
 
       - name: Screenshots in Branch ablegen
         if: always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feature/'))

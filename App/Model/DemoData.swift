@@ -214,6 +214,8 @@ extension DemoData {
 
         Geometrisch ist $f'(x_0)$ die Steigung der [[Tangente]] im Punkt $(x_0, f(x_0))$.
 
+        ![[Sekante und Tangente.svg|420]]
+
         > [!tip] Merksatz
         > Erst ableiten, dann einsetzen. Für Potenzen gilt $\\left(x^n\\right)' = n\\,x^{n-1}$.
 
@@ -228,6 +230,28 @@ extension DemoData {
         > Bei der Kettenregel die innere Ableitung vergessen.
 
         Siehe auch [[Integral|Integralrechnung]].
+        """,
+        // Drawn for a light page (dark ink, no background): the note view puts it on a light panel in both modes.
+        "Mathematik/Analysis/_assets/Sekante und Tangente.svg": """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 240" font-family="sans-serif">
+          <text x="210" y="16" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">Die Sekante wird für h → 0 zur Tangente</text>
+          <line x1="40" y1="210" x2="405" y2="210" stroke="#333"/>
+          <line x1="40" y1="24" x2="40" y2="210" stroke="#333"/>
+          <path d="M40,210 Q220,210 400,20" fill="none" stroke="#4e79a7" stroke-width="2.5"/>
+          <line x1="184" y1="188.6" x2="382" y2="45" stroke="#f28e2b" stroke-width="2" stroke-dasharray="6 4"/>
+          <line x1="130" y1="210" x2="364" y2="86.5" stroke="#e15759" stroke-width="2"/>
+          <line x1="220" y1="162.5" x2="220" y2="210" stroke="#999" stroke-dasharray="3 3"/>
+          <line x1="355" y1="64.5" x2="355" y2="210" stroke="#999" stroke-dasharray="3 3"/>
+          <circle cx="220" cy="162.5" r="4" fill="#333"/>
+          <circle cx="355" cy="64.5" r="4" fill="#333"/>
+          <text x="227" y="182" font-size="12" fill="#333">P</text>
+          <text x="340" y="60" font-size="12" fill="#333">Q</text>
+          <text x="220" y="226" text-anchor="middle" font-size="12" fill="#333">x₀</text>
+          <text x="355" y="226" text-anchor="middle" font-size="12" fill="#333">x₀ + h</text>
+          <text x="392" y="40" font-size="13" fill="#4e79a7">f</text>
+          <text x="300" y="150" font-size="12" fill="#e15759">Tangente</text>
+          <text x="250" y="96" font-size="12" fill="#f28e2b">Sekante</text>
+        </svg>
         """,
         "Mathematik/Analysis/Integral.md": "# Integral\n\nDas bestimmte Integral misst die orientierte Fläche: $\\int_a^b f(x)\\,dx = F(b) - F(a)$.\n",
         "Mathematik/Analysis/Tangente.md": "# Tangente\n\nGerade durch $(x_0, f(x_0))$ mit Steigung $f'(x_0)$.\n",

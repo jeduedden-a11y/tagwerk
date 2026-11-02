@@ -15,12 +15,13 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var tab: AppTab
-    @State private var showSettings: Bool
+    @State private var showSettings = false
     @State private var interrupted: RecordingSnapshot?
+    private let openSettingsAtLaunch: Bool
 
     init(initialTab: AppTab, openSettings: Bool) {
         _tab = State(initialValue: initialTab)
-        _showSettings = State(initialValue: openSettings)
+        openSettingsAtLaunch = openSettings
     }
 
     var body: some View {
@@ -43,11 +44,13 @@ struct RootView: View {
             Tab("Notizen", systemImage: "books.vertical.fill", value: AppTab.notizen) {
                 NotesView(showSettings: $showSettings)
             }
-            // On the iPhone the bar has room for five; Verlauf opens from Heute there.
-            Tab("Verlauf", systemImage: "chart.bar.fill", value: AppTab.verlauf) {
-                HistoryView(showSettings: $showSettings)
+            // The iPhone bar holds five tabs. A sixth, even a hidden one, makes the system add "Mehr" and moves
+            // Notizen in there, under a second navigation bar. On compact width Verlauf therefore opens from Heute.
+            if sizeClass != .compact {
+                Tab("Verlauf", systemImage: "chart.bar.fill", value: AppTab.verlauf) {
+                    HistoryView(showSettings: $showSettings)
+                }
             }
-            .defaultVisibility(sizeClass == .compact ? .hidden : .automatic, for: .tabBar)
         }
         .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
@@ -75,8 +78,25 @@ struct RootView: View {
         }
         .onChange(of: store.requestedTab) { _, t in
             guard let t else { return }
-            withAnimation(.smooth) { tab = t }
+            withAnimation(.smooth) { show(t) }
             store.requestedTab = nil
+        }
+        .onChange(of: sizeClass) { _, _ in
+            // Split View on the iPad can switch between the two layouts while Verlauf is open.
+            if sizeClass == .compact, tab == .verlauf { show(.verlauf) }
+            if sizeClass != .compact, store.showHistory {
+                store.showHistory = false
+                tab = .verlauf
+            }
+        }
+        .onAppear {
+            if tab == .verlauf { show(.verlauf) }
+        }
+        .task {
+            // Screenshot runs only (-TWTab einstellungen): a sheet requested before the first frame can be dropped.
+            guard openSettingsAtLaunch else { return }
+            try? await Task.sleep(for: .milliseconds(400))
+            showSettings = true
         }
         .alert("Lauf unterbrochen", isPresented: Binding(get: { interrupted != nil }, set: { if !$0 { interrupted = nil } }), presenting: interrupted) { snap in
             Button("Weiter aufzeichnen") {
@@ -102,6 +122,16 @@ struct RootView: View {
             if !store.isDemo, store.recorder.phase == .idle, let snap = RecordingSnapshot.load() { interrupted = snap }
             Task { await store.loadFoodDatabase() }
             await store.syncNow()
+        }
+    }
+
+    /// Verlauf is a tab in regular width and a page pushed onto Heute in compact width.
+    private func show(_ t: AppTab) {
+        if t == .verlauf, sizeClass == .compact {
+            tab = .heute
+            store.showHistory = true
+        } else {
+            tab = t
         }
     }
 

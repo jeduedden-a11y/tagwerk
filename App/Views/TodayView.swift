@@ -14,6 +14,7 @@ struct TodayView: View {
     }
 
     var body: some View {
+        @Bindable var store = store
         let key = store.selectedDay
         let day = store.day(key)
         NavigationStack {
@@ -46,10 +47,13 @@ struct TodayView: View {
                     .readableColumn()
                     .id(key)
                 }
-                .onAppear {
-                    // Screenshot runs only: -TWScroll unten
-                    if UserDefaults.standard.string(forKey: "TWScroll") == "unten" {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { proxy.scrollTo("weight", anchor: .bottom) }
+                .task {
+                    // Screenshot runs only: -TWScroll unten. Repeated, because on a slow simulator the cards may
+                    // not be laid out yet at the first attempt.
+                    guard UserDefaults.standard.string(forKey: "TWScroll") == "unten" else { return }
+                    for delay in [600, 1500, 3000] {
+                        try? await Task.sleep(for: .milliseconds(delay))
+                        proxy.scrollTo("weight", anchor: .bottom)
                     }
                 }
             }
@@ -65,7 +69,7 @@ struct TodayView: View {
                 if sizeClass == .compact {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
-                            store.requestedTab = .verlauf
+                            store.showHistory = true
                         } label: {
                             Label("Verlauf", systemImage: "chart.bar.fill")
                         }
@@ -78,6 +82,9 @@ struct TodayView: View {
                         Label("Einstellungen", systemImage: "gearshape")
                     }
                 }
+            }
+            .navigationDestination(isPresented: $store.showHistory) {
+                HistoryContent(showSettings: $showSettings)
             }
         }
     }
