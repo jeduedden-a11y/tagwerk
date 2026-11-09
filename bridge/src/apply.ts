@@ -21,6 +21,7 @@ import {
   JOURNAL_END,
   JOURNAL_START,
 } from "./markdown";
+import { findLearnBlock, learnHash, learnKey, normalizeLearn, renderLearnBlock, renderLearnInner, upsertLearnBlock } from "./learn";
 import { fcDays, parseSchoolNote, recurrenceOf, renderSchoolNote, upsertOverride } from "./planner";
 import type {
   AppointmentAddEvent,
@@ -30,6 +31,7 @@ import type {
   DayPatchEvent,
   FoodDayEvent,
   HabitConfig,
+  LearnNoteEvent,
   ProfileSetEvent,
   SchoolOverrideEvent,
   RunAddEvent,
@@ -75,7 +77,8 @@ export interface ApplyContext {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const deDateTime = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const deDate = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+const deDateTime = (d: Date) => `${deDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 const join = (folder: string, name: string) => (folder ? `${folder.replace(/\/+$/, "")}/${name}` : name);
 
@@ -487,6 +490,60 @@ async function applyProfileSet(ctx: ApplyContext, ev: ProfileSetEvent): Promise<
   });
 }
 
+/** A wiki note in the vault's format: title, tags, type, created, updated, status; then the notes heading. */
+export function newLearnNote(ev: LearnNoteEvent, today: string, heading: string, block: string): string {
+  const fm = ev.frontmatter ?? {};
+  const tags = (fm.tags ?? []).filter((t) => t.trim());
+  return [
+    "---",
+    `title: ${yamlScalar(ev.title.replace(/\s+/g, " ").trim())}`,
+    ...(tags.length ? ["tags:", ...tags.map((t) => `  - ${yamlScalar(t)}`)] : []),
+    `type: ${fm.type || "note"}`,
+    `created: ${ev.created ?? today}`,
+    `updated: ${today}`,
+    `status: ${fm.status || "growing"}`,
+    "---",
+    "",
+    `## ${heading}`,
+    "",
+    block,
+    "",
+  ].join("\n");
+}
+
+async function applyLearnNote(ctx: ApplyContext, ev: LearnNoteEvent): Promise<void> {
+  const path = ev.path.normalize("NFC");
+  const key = learnKey(ev.block);
+  const heading = ev.heading.replace(/\s+/g, " ").trim();
+  const text = normalizeLearn(ev.text);
+  const now = ctx.now();
+  const exists = await ctx.vault.exists(path);
+  if (!text && !exists) return; // nothing to remove
+  const inner = text ? renderLearnInner(text, ev.source ?? null, deDate(now)) : null;
+  const hash = inner ? await learnHash(inner) : "";
+  if (!exists) {
+    await ctx.vault.create(path, newLearnNote(ev, localDate(now), heading, renderLearnBlock(key, hash, inner as string)));
+    return;
+  }
+  // Edited in Obsidian since the plugin wrote it? Then that version stays visible as a quote.
+  const current = findLearnBlock(splitFrontmatter(await ctx.vault.read(path)).body, key);
+  let conflict: { label: string; text: string } | null = null;
+  if (
+    current?.hash &&
+    normalizeLearn(current.inner) &&
+    (await learnHash(current.inner)) !== current.hash &&
+    (inner === null || normalizeLearn(current.inner) !== normalizeLearn(inner))
+  ) {
+    const verb = inner === null ? "entfernt" : "ersetzt";
+    conflict = { label: `In Obsidian geänderte Fassung, von Lernwerk ${verb} am ${deDateTime(now)}`, text: current.inner };
+  }
+  await ctx.vault.process(path, (content) => {
+    const s = splitFrontmatter(content);
+    const prefix = content.slice(0, content.length - s.body.length);
+    return prefix + upsertLearnBlock(s.body, { key, heading, inner, hash, conflict });
+  });
+}
+
 export async function applyEvent(ctx: ApplyContext, ev: BridgeEvent): Promise<void> {
   validateEvent(ev);
   switch (ev.type) {
@@ -512,6 +569,8 @@ export async function applyEvent(ctx: ApplyContext, ev: BridgeEvent): Promise<vo
       return applyFoodDay(ctx, ev);
     case "profile.set":
       return applyProfileSet(ctx, ev);
+    case "learn.note":
+      return applyLearnNote(ctx, ev);
   }
 }
 

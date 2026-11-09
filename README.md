@@ -110,7 +110,11 @@ Ein zweiter Lauf am selben Tag heißt `JJJJ-MM-TT-2.md`. Das Diagramm im Vault e
 
 Lebensmitteltabelle: Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0 – Deutsche Nährstoffdatenbank. Karlsruhe. DOI [10.25826/Data20251217-134202-0](https://doi.org/10.25826/Data20251217-134202-0), Lizenz CC BY 4.0. `App/Resources/BLS.json` ist ein Auszug von zehn Komponenten, gerundet, Salz aus Natrium berechnet, mit den Errata vom August 2026; erzeugt von `scripts/bls_to_json.py` (Workflow `BLS-Tabelle`).
 
-Neue Ereignistypen schickt die App erst, wenn das Plugin im Stand meldet, dass es sie kennt: Läufe, Ernährung und Profil ab Tagwerk Bridge 1.1, Planer-Einträge, Klausuren und eigene Markierungen ab 1.2. Mit einem älteren Plugin bleiben sie auf dem iPhone und gehen nach dem Update automatisch raus.
+Neue Ereignistypen schickt die App erst, wenn das Plugin im Stand meldet, dass es sie kennt: Läufe, Ernährung und Profil ab Tagwerk Bridge 1.1, Planer-Einträge, Klausuren und eigene Markierungen ab 1.2, Lernnotizen aus Lernwerk ab 1.3. Mit einem älteren Plugin bleiben sie auf dem iPhone und gehen nach dem Update automatisch raus.
+
+## Lernnotizen aus Lernwerk
+
+Die Lern-App Lernwerk (eigenes Repo `lernwerk`) nutzt dasselbe Daten-Repo, denselben Token und dieselbe Passphrase. Ab Tagwerk Bridge 1.3 meldet das Plugin die Funktion `lernen` und versteht das Ereignis `learn.note`: Jede Notiz aus einer Lektion wird ein eigener Block unter `## Eigene Notizen` in der Wiki-Notiz, die die Lektion nennt (zum Beispiel `02 Wiki/Mathematik/09 Stochastik/Satz von Bayes.md`), eingefasst in `%% lernwerk:… %%`-Marker und mit einer Zeile, aus welcher Lektion sie stammt. Eine geänderte Notiz ersetzt nur ihren Block, eine gelöschte entfernt ihn; alles andere in der Notiz bleibt, wie es ist. Wurde der Block in Obsidian bearbeitet, bleibt diese Fassung als Zitat darunter stehen. Fehlt die Wiki-Notiz noch, legt das Plugin sie mit Eigenschaften im Stil des Vaults an (`title`, `tags: wiki02/<Fach>`, `type: note`, `created`, `updated`, `status: growing`). Geschrieben wird nur in Markdown-Notizen innerhalb des Vaults, nie in versteckte Ordner.
 
 ## Planer
 

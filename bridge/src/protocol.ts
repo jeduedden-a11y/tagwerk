@@ -245,6 +245,35 @@ export interface ProfileSetEvent extends EventBase {
   summary?: string | null;
 }
 
+/** Properties of a wiki note that learn.note creates because it does not exist yet. */
+export interface LearnFrontmatter {
+  tags?: string[] | null;
+  type?: string | null;
+  status?: string | null;
+}
+
+/**
+ * A note from the learning app Lernwerk (plugin 1.3, feature "lernen"). It owns one managed block under
+ * `heading` in the wiki note at `path`; an empty text removes the block. Sent by Lernwerk, not by Tagwerk.
+ */
+export interface LearnNoteEvent extends EventBase {
+  type: "learn.note";
+  /** Vault path of the note, e.g. "02 Wiki/Mathematik/09 Stochastik/Satz von Bayes.md". */
+  path: string;
+  /** Title of the note, used when it has to be created. */
+  title: string;
+  /** "lernwerk-<note id>", one block per note in the app. */
+  block: string;
+  /** Heading the blocks are collected under, "Eigene Notizen". */
+  heading: string;
+  text: string;
+  /** Origin shown below the text, e.g. "Lernwerk, Lektion »Satz von Bayes«". */
+  source?: string | null;
+  /** YYYY-MM-DD the note was first written in the app. */
+  created?: string | null;
+  frontmatter?: LearnFrontmatter | null;
+}
+
 export type BridgeEvent =
   | DayPatchEvent
   | DayJournalEvent
@@ -256,10 +285,11 @@ export type BridgeEvent =
   | RunAddEvent
   | RunPatchEvent
   | FoodDayEvent
-  | ProfileSetEvent;
+  | ProfileSetEvent
+  | LearnNoteEvent;
 
 /** Event families this plugin understands; the app holds back events of families not listed. */
-export const FEATURES = ["runs", "food", "profile", "planner", "wiki"] as const;
+export const FEATURES = ["runs", "food", "profile", "planner", "wiki", "lernen"] as const;
 
 /** Plaintext of one inbox file. */
 export interface InboxBatch {
@@ -460,6 +490,27 @@ export function recurProblem(r: unknown, start: string | null): string | null {
   return null;
 }
 
+/**
+ * learn.note may write any Markdown note of the vault, but nothing outside it, nothing hidden
+ * (.obsidian, .trash) and no names Windows or Obsidian cannot store.
+ */
+export function learnPathProblem(p: unknown): string | null {
+  if (typeof p !== "string" || !p.trim()) return "fehlt";
+  if (p.length > 400) return "zu lang";
+  if (!p.endsWith(".md")) return "keine Markdown-Notiz";
+  if (p.startsWith("/") || p.includes("\\")) return "kein Pfad im Vault";
+  const parts = p.split("/");
+  for (const part of parts) {
+    if (!part.trim() || part !== part.trim()) return "leerer Abschnitt";
+    if (part === "." || part === ".." || part.startsWith(".")) return "versteckter oder relativer Ordner";
+    // eslint-disable-next-line no-control-regex
+    if (/[:*?"<>|#^[\]\u0000-\u001f]/.test(part)) return `ungültiges Zeichen in ${part}`;
+  }
+  return null;
+}
+
+const LEARN_TAG_RE = /^[^\s#,"'][^\s,"']{0,80}$/;
+
 export const isRating = (s: unknown): s is string => typeof s === "string" && RATING_RE.test(s);
 export const isWeight = (s: unknown): s is string => typeof s === "string" && WEIGHT_RE.test(s);
 
@@ -563,6 +614,26 @@ export function validateEvent(ev: BridgeEvent): void {
       const problem = profileProblem(ev.profile);
       if (problem) fail(`profile.${problem}`);
       if (ev.summary != null && (typeof ev.summary !== "string" || ev.summary.length > 600)) fail("summary");
+      return;
+    }
+    case "learn.note": {
+      const problem = learnPathProblem(ev.path);
+      if (problem) fail(`path: ${problem}`);
+      if (typeof ev.title !== "string" || !ev.title.trim() || ev.title.length > 200) fail("title");
+      if (typeof ev.block !== "string" || !/^lernwerk-[A-Za-z0-9._-]{1,100}$/.test(ev.block)) fail("block");
+      if (typeof ev.heading !== "string" || !ev.heading.trim() || ev.heading.length > 80 || /[\r\n#]/.test(ev.heading)) fail("heading");
+      if (typeof ev.text !== "string" || ev.text.length > 100_000) fail("text");
+      if (ev.source != null && (typeof ev.source !== "string" || ev.source.length > 300 || /[\r\n]/.test(ev.source))) fail("source");
+      if (ev.created != null && !isDate(ev.created)) fail("created");
+      if (ev.frontmatter != null) {
+        const fm = ev.frontmatter;
+        if (typeof fm !== "object") fail("frontmatter");
+        if (fm.tags != null && (!Array.isArray(fm.tags) || fm.tags.length > 20 || !fm.tags.every((t) => typeof t === "string" && LEARN_TAG_RE.test(t)))) fail("frontmatter.tags");
+        for (const k of ["type", "status"] as const) {
+          const v = fm[k];
+          if (v != null && (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(v))) fail(`frontmatter.${k}`);
+        }
+      }
       return;
     }
     default:
