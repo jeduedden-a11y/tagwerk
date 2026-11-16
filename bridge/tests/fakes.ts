@@ -10,7 +10,11 @@ export class FakeVault implements VaultPort {
   constructor(initial: Record<string, string> = {}) {
     for (const [k, v] of Object.entries(initial)) this.files.set(k, v);
   }
-  async exists(p: string) { return this.files.has(p); }
+  async exists(p: string) { return this.files.has(p) || this.bins.has(p); }
+  async createBinary(p: string, d: Uint8Array) {
+    if (this.files.has(p) || this.bins.has(p)) throw new Error(`exists ${p}`);
+    this.bins.set(p, d);
+  }
   async read(p: string) {
     const c = this.files.get(p);
     if (c === undefined) throw new Error(`missing ${p}`);

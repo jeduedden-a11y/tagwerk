@@ -274,6 +274,40 @@ export interface LearnNoteEvent extends EventBase {
   frontmatter?: LearnFrontmatter | null;
 }
 
+/**
+ * A book scanned in Lernwerk (plugin 1.4, feature "buecher"): a card in the books folder with the same properties
+ * the book-search plugin writes, and the cover next to it. A book whose ISBN is already in the folder stays as it is.
+ * Sent by Lernwerk, not by Tagwerk.
+ */
+export interface BookAddEvent extends EventBase {
+  type: "book.add";
+  /** 13 digits, checksum already checked by the app. */
+  isbn13: string;
+  isbn10?: string | null;
+  title: string;
+  originalTitle?: string | null;
+  author: string;
+  translator?: string | null;
+  description?: string | null;
+  pages?: number | null;
+  publisher?: string | null;
+  /** As the book-search plugin writes it: "2008/07/03" or just the year. */
+  published?: string | null;
+  categories?: string[] | null;
+  /** Where the data came from, e.g. the Open Library page. */
+  link?: string | null;
+  /** JPEG as base64, about 300 px wide; without one the card has no cover. */
+  cover?: string | null;
+}
+
+/** ISBN-13 with a valid check digit. */
+export function isIsbn13(s: unknown): s is string {
+  if (typeof s !== "string" || !/^97[89]\d{10}$/.test(s)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(s[i]) * (i % 2 === 0 ? 1 : 3);
+  return (10 - (sum % 10)) % 10 === Number(s[12]);
+}
+
 export type BridgeEvent =
   | DayPatchEvent
   | DayJournalEvent
@@ -286,10 +320,11 @@ export type BridgeEvent =
   | RunPatchEvent
   | FoodDayEvent
   | ProfileSetEvent
-  | LearnNoteEvent;
+  | LearnNoteEvent
+  | BookAddEvent;
 
 /** Event families this plugin understands; the app holds back events of families not listed. */
-export const FEATURES = ["runs", "food", "profile", "planner", "wiki", "lernen"] as const;
+export const FEATURES = ["runs", "food", "profile", "planner", "wiki", "lernen", "buecher"] as const;
 
 /** Plaintext of one inbox file. */
 export interface InboxBatch {
@@ -634,6 +669,30 @@ export function validateEvent(ev: BridgeEvent): void {
           if (v != null && (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(v))) fail(`frontmatter.${k}`);
         }
       }
+      return;
+    }
+    case "book.add": {
+      if (!isIsbn13(ev.isbn13)) fail("isbn13");
+      if (ev.isbn10 != null && (typeof ev.isbn10 !== "string" || !/^\d{9}[\dX]$/.test(ev.isbn10))) fail("isbn10");
+      const text = (k: string, v: unknown, max: number, required = false) => {
+        if (v == null) {
+          if (required) fail(k);
+          return;
+        }
+        if (typeof v !== "string" || v.length > max || (required && !v.trim()) || /[\r\n]/.test(v)) fail(k);
+      };
+      text("title", ev.title, 300, true);
+      text("author", ev.author, 300, true);
+      text("originalTitle", ev.originalTitle, 300);
+      text("translator", ev.translator, 300);
+      text("publisher", ev.publisher, 200);
+      text("published", ev.published, 20);
+      text("link", ev.link, 500);
+      // the description may have line breaks, the other fields may not
+      if (ev.description != null && (typeof ev.description !== "string" || ev.description.length > 20_000)) fail("description");
+      if (ev.pages != null && (!Number.isInteger(ev.pages) || ev.pages < 1 || ev.pages > 20_000)) fail("pages");
+      if (ev.categories != null && (!Array.isArray(ev.categories) || ev.categories.length > 30 || !ev.categories.every((c) => typeof c === "string" && c.length > 0 && c.length <= 80 && !/[\r\n,]/.test(c)))) fail("categories");
+      if (ev.cover != null && (typeof ev.cover !== "string" || ev.cover.length > 900_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(ev.cover))) fail("cover");
       return;
     }
     default:

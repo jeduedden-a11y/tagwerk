@@ -40,6 +40,13 @@ export class ObsidianVault implements VaultPort {
     await this.app.vault.create(p, content);
   }
 
+  async createBinary(path: string, data: Uint8Array): Promise<void> {
+    const p = normalizePath(path);
+    const slash = p.lastIndexOf("/");
+    if (slash > 0) await this.ensureFolder(p.slice(0, slash));
+    await this.app.vault.createBinary(p, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
+  }
+
   async process(path: string, fn: (content: string) => string): Promise<void> {
     await this.app.vault.process(this.file(path), fn);
   }

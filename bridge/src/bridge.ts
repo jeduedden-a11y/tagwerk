@@ -43,6 +43,8 @@ export interface BridgeConfig {
   iterations?: number;
   /** Folder copied for the app's notes; empty to switch the copy off. */
   wikiFolder?: string;
+  /** Further folders copied next to it (plugin 1.4): the books and their covers for the library of Lernwerk. */
+  wikiExtraFolders?: string[];
 }
 
 export interface SyncReport {
@@ -168,6 +170,7 @@ export class Bridge {
         if (!this.d.state.wiki) this.d.state.wiki = emptyWikiState();
         const r = await exportWiki(this.d.ctx.vault, gh, this.d.state.wiki, {
           folder: cfg.wikiFolder,
+          extraFolders: cfg.wikiExtraFolders,
           passphrase: cfg.passphrase,
           seal: { salt: this.salt(), iterations: cfg.iterations },
           now: this.d.ctx.now(),

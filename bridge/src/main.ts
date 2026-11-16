@@ -21,6 +21,11 @@ export interface TagwerkSettings {
   schoolNotePath: string;
   /** Folder the app shows under "Notizen"; empty switches the copy off. */
   wikiFolder: string;
+  /** Further folders for the app, separated by commas: the books and covers of the library in Lernwerk. */
+  wikiExtraFolders: string;
+  /** Cards and covers of books the app adds after a scan. */
+  booksFolder: string;
+  coversFolder: string;
   wikiEnabled: boolean;
   intervalMinutes: number;
   snapshotDays: number;
@@ -41,6 +46,9 @@ export const DEFAULT_SETTINGS: TagwerkSettings = {
   appointmentsFolder: "01 Leben/Termine",
   ...DEFAULT_FITNESS_FOLDERS,
   wikiFolder: "02 Wiki",
+  wikiExtraFolders: "Bücher, Cover",
+  booksFolder: "Bücher",
+  coversFolder: "Cover",
   wikiEnabled: true,
   intervalMinutes: 5,
   snapshotDays: 400,
@@ -112,6 +120,8 @@ export default class TagwerkBridgePlugin extends Plugin {
       foodFolder: this.settings.foodFolder,
       profilePath: this.settings.profilePath,
       schoolNotePath: this.settings.schoolNotePath,
+      booksFolder: this.settings.booksFolder,
+      coversFolder: this.settings.coversFolder,
       habits: this.settings.habits,
     };
   }
@@ -126,6 +136,10 @@ export default class TagwerkBridgePlugin extends Plugin {
       snapshotDays: this.settings.snapshotDays,
       textDays: this.settings.textDays,
       wikiFolder: this.settings.wikiEnabled ? this.settings.wikiFolder.trim() : "",
+      wikiExtraFolders: this.settings.wikiExtraFolders
+        .split(",")
+        .map((f) => f.trim().replace(/\/+$/, ""))
+        .filter(Boolean),
     };
   }
 

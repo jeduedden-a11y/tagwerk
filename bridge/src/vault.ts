@@ -29,4 +29,6 @@ export interface VaultPort {
   /** Every file below folder, recursively and of any type. */
   listFiles(folder: string): Promise<VaultFileStat[]>;
   readBinary(path: string): Promise<Uint8Array>;
+  /** Creates a binary file (and missing parent folders), e.g. a cover. Fails if it exists. */
+  createBinary(path: string, data: Uint8Array): Promise<void>;
 }

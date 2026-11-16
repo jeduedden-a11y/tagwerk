@@ -21,11 +21,13 @@ import {
   JOURNAL_END,
   JOURNAL_START,
 } from "./markdown";
+import { base64Bytes, bookCoverName, bookNotePath, cardHasIsbn, DEFAULT_BOOKS_FOLDER, DEFAULT_COVERS_FOLDER, renderBookCard } from "./books";
 import { findLearnBlock, learnHash, learnKey, normalizeLearn, renderLearnBlock, renderLearnInner, upsertLearnBlock } from "./learn";
 import { fcDays, parseSchoolNote, recurrenceOf, renderSchoolNote, upsertOverride } from "./planner";
 import type {
   AppointmentAddEvent,
   AppointmentPatchEvent,
+  BookAddEvent,
   BridgeEvent,
   DayJournalEvent,
   DayPatchEvent,
@@ -56,6 +58,10 @@ export interface FolderSettings {
   profilePath: string;
   /** Note with the lessons the user marked himself (cancelled, absent). */
   schoolNotePath: string;
+  /** Cards of the books (plugin 1.4); "Bücher" when not set. */
+  booksFolder?: string;
+  /** Cover images of the books; "Cover" when not set. */
+  coversFolder?: string;
   habits: HabitConfig[];
 }
 
@@ -544,6 +550,27 @@ async function applyLearnNote(ctx: ApplyContext, ev: LearnNoteEvent): Promise<vo
   });
 }
 
+/** A scanned book: its card and cover, unless a card with the same ISBN is in the folder already. */
+async function applyBookAdd(ctx: ApplyContext, ev: BookAddEvent): Promise<void> {
+  const booksFolder = (ctx.folders.booksFolder || DEFAULT_BOOKS_FOLDER).replace(/\/+$/, "");
+  const coversFolder = (ctx.folders.coversFolder || DEFAULT_COVERS_FOLDER).replace(/\/+$/, "");
+  // added with the book-search plugin or by an earlier scan: leave that card as it is
+  for (const p of await ctx.vault.list(booksFolder)) {
+    const head = (await ctx.vault.read(p)).slice(0, 4000);
+    if (cardHasIsbn(head, ev.isbn13, ev.isbn10 ?? null)) return;
+  }
+  const path = bookNotePath(booksFolder, ev);
+  if (await ctx.vault.exists(path)) return;
+  let coverFile: string | null = null;
+  if (ev.cover) {
+    const name = bookCoverName(ev);
+    const coverPath = `${coversFolder}/${name}`;
+    if (!(await ctx.vault.exists(coverPath))) await ctx.vault.createBinary(coverPath, base64Bytes(ev.cover));
+    coverFile = name;
+  }
+  await ctx.vault.create(path, renderBookCard(ev, coverFile));
+}
+
 export async function applyEvent(ctx: ApplyContext, ev: BridgeEvent): Promise<void> {
   validateEvent(ev);
   switch (ev.type) {
@@ -571,6 +598,8 @@ export async function applyEvent(ctx: ApplyContext, ev: BridgeEvent): Promise<vo
       return applyProfileSet(ctx, ev);
     case "learn.note":
       return applyLearnNote(ctx, ev);
+    case "book.add":
+      return applyBookAdd(ctx, ev);
   }
 }
 

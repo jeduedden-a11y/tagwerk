@@ -51,6 +51,12 @@ export const emptyWikiState = (): WikiState => ({
 
 export interface WikiOptions {
   folder: string;
+  /**
+   * Further vault folders (plugin 1.4, e.g. "Bücher" and "Cover" for the library of Lernwerk), copied next to the
+   * wiki under their own path. Everything below a folder or file name starting with "_" stays in the vault, so loose
+   * full texts in "Bücher/_Inbox" never leave it. A folder whose name the wiki already uses is skipped.
+   */
+  extraFolders?: string[];
   passphrase: string;
   seal: SealOptions;
   now: Date;
@@ -150,6 +156,13 @@ function included(f: VaultFileStat, folder: string): boolean {
   return (TEXT_EXT.has(e) && f.size <= MAX_TEXT) || (BIN_EXT.has(e) && f.size <= MAX_BIN);
 }
 
+/** Same rules as the wiki folder, and nothing below a name that starts with "_" (working folders, loose full texts). */
+function includedExtra(f: VaultFileStat, folder: string): boolean {
+  const below = f.path.slice(folder.length + 1);
+  if (below.split("/").some((seg) => seg.startsWith("_"))) return false;
+  return included(f, folder);
+}
+
 async function shaOf(gh: GitHubRepo, path: string): Promise<string | undefined> {
   return (await gh.list(WIKI_DIR)).find((e) => e.path === path)?.sha;
 }
@@ -172,7 +185,25 @@ export async function exportWiki(
 ): Promise<WikiResult> {
   const folder = o.folder.replace(/\/+$/, "");
   const now = o.now.getTime();
-  const all = (await vault.listFiles(folder)).filter((f) => included(f, folder)).sort((a, b) => a.path.localeCompare(b.path));
+  // path inside the copy: the wiki folder's files lose its name, the files of further folders keep their whole path
+  const relOf = new Map<string, string>();
+  const mainFiles = (await vault.listFiles(folder)).filter((f) => included(f, folder));
+  for (const f of mainFiles) relOf.set(f.path, f.path.slice(folder.length + 1));
+  const taken = new Set(mainFiles.map((f) => relOf.get(f.path)!.split("/")[0]));
+  const extraFiles: VaultFileStat[] = [];
+  for (const raw of o.extraFolders ?? []) {
+    const extra = raw.trim().replace(/\/+$/, "");
+    if (!extra || extra === folder || extra.startsWith(`${folder}/`) || folder.startsWith(`${extra}/`)) continue;
+    const top = extra.split("/")[0];
+    if (taken.has(top)) continue;
+    taken.add(top);
+    for (const f of (await vault.listFiles(extra)).filter((x) => includedExtra(x, extra))) {
+      relOf.set(f.path, f.path);
+      extraFiles.push(f);
+    }
+  }
+  const rel = (p: string) => relOf.get(p) ?? p;
+  const all = [...mainFiles, ...extraFiles].sort((a, b) => rel(a.path).localeCompare(rel(b.path)));
   const globalSig = await sha256Hex(all.map((f) => `${f.path}|${f.mtime}|${f.size}`).join("\n"));
   const dvDue = !state.lastDataview || now - Date.parse(state.lastDataview) > 24 * 3600_000;
   const unchanged = globalSig === state.globalSig;
@@ -180,7 +211,6 @@ export async function exportWiki(
   if (!o.force && unchanged && !dvDue) return skip("Wiki unverändert.");
   if (!o.force && state.lastRun && o.minIntervalMs && now - Date.parse(state.lastRun) < o.minIntervalMs) return skip("Wiki: nächster Abgleich später.");
 
-  const rel = (p: string) => p.slice(folder.length + 1);
   const members = new Map<string, VaultFileStat[]>();
   const bucketOf = new Map<string, string>();
   const texts = new Map<string, string>();

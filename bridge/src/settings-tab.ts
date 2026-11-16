@@ -72,7 +72,7 @@ export class TagwerkSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl).setName("Ordner im Vault").setHeading();
-    const folder = (name: string, key: "dailyFolder" | "tasksFolder" | "appointmentsFolder" | "runsFolder" | "routesFolder" | "foodFolder" | "profilePath" | "schoolNotePath" | "wikiFolder", desc: string) =>
+    const folder = (name: string, key: "dailyFolder" | "tasksFolder" | "appointmentsFolder" | "runsFolder" | "routesFolder" | "foodFolder" | "profilePath" | "schoolNotePath" | "wikiFolder" | "wikiExtraFolders" | "booksFolder" | "coversFolder", desc: string) =>
       new Setting(containerEl).setName(name).setDesc(desc).addText((t) => t.setValue(s[key]).onChange(async (v) => {
         s[key] = v.trim().replace(/\/+$/, "");
         await p.saveSettings();
@@ -95,6 +95,11 @@ export class TagwerkSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }));
     folder("Wiki-Ordner", "wikiFolder", "Ordner mit den Notizen für die App, mit allen Unterordnern, Abbildungen (SVG, PNG) und HTML-Dateien");
+    folder("Weitere Ordner", "wikiExtraFolders", "Durch Kommas getrennt, für die Bibliothek in Lernwerk: Bücher und Cover. Was unter einem Namen mit _ am Anfang liegt (etwa _Inbox), bleibt im Vault.");
+
+    new Setting(containerEl).setName("Bibliothek (Lernwerk)").setHeading();
+    folder("Buchkarten", "booksFolder", "Hier legt die App Bücher an, die du mit der Kamera scannst. Gleiche ISBN: die vorhandene Karte bleibt unverändert.");
+    folder("Cover", "coversFolder", "Coverbilder der gescannten Bücher");
 
     new Setting(containerEl).setName("Gewohnheiten").setHeading();
     containerEl.createEl("p", {
